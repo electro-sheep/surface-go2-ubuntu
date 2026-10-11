@@ -57,6 +57,8 @@ step "Desktop"
 t "Ubuntu Tiling Assistant off"      bash -c "! gnome-extensions info tiling-assistant@ubuntu.com | grep -q 'State: ACTIVE'"
 t "GNOME edge snapping on"           bash -c "gsettings get org.gnome.mutter edge-tiling | grep -q true"
 t "Portrait Panel enabled"           bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q portrait-panel@electro"
+t "GNOME Software installed"         dpkg -s gnome-software-plugin-snap
+t "GNOME Software not autostarting"  grep -q "^Hidden=true" "$HOME/.config/autostart/org.gnome.Software.desktop"
 if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "rice installed"                 test -x "$HOME/.local/bin/rice"
   t "Open Bar active"                bash -c "gnome-extensions info openbar@neuromorph | grep -q 'State: ACTIVE'"

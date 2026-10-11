@@ -41,6 +41,7 @@ safe: each step checks what's already done.
 | | SIM disappears after suspend | `system-sleep` hook that does the same on resume |
 | | modem is mapped to the empty eSIM | maps it to the physical SIM slot (`mbimcli --ms-set-device-slot-mappings=0`) |
 | `desktop` | touch-dragging a window snaps it to whichever half the **mouse cursor** was last near | turns off Ubuntu's Tiling Assistant, so GNOME's own snapping (which follows your finger) is used |
+| | App Center won't shrink below 852×652, bigger than the screen at 2×, so it hangs off the edges and can't maximise | installs **GNOME Software** (fits phone width) for snaps and debs, hides App Center; no background service or auto-downloads, debs preferred |
 | | in portrait, the top-bar icons are cramped and run into the bar's rounded edge | **Portrait Panel** extension: in portrait only, hides the 4G icon and gives the icons one even gap |
 
 Optional modules:
