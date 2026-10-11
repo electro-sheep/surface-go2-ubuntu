@@ -9,21 +9,38 @@ Everything here was worked out and tested on a real Surface Go 2 (Intel, 8 GB, L
 
 ## Quick start
 
-On the fresh install, connected to Wi-Fi:
+On the fresh install, connected to Wi-Fi, open a terminal and paste:
 
 ```bash
-sudo apt install -y git gh
-gh auth login                 # private repo: sign in once (choose GitHub.com → HTTPS → browser)
-gh repo clone electro-sheep/surface-go2-ubuntu
+wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash
+```
+
+It downloads the repo to `~/surface-go2-ubuntu` and installs everything: the fixes and the rice.
+Then reboot, and run `~/surface-go2-ubuntu/check.sh` to see what's working.
+
+**On any other computer** (Ubuntu 24.04 with the standard GNOME desktop), the same line installs
+just the rice, as the other fixes are for the Surface's hardware.
+
+To choose the modules, put them after `bash -s --` (here: the fixes without the rice):
+
+```bash
+wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash -s -- system cameras lte desktop
+```
+
+Run it as your normal user, not with `sudo`. It asks for your password once. Running it again is
+safe: it updates the download and each step checks what's already done.
+
+Or by hand:
+
+```bash
+sudo apt install -y git
+git clone https://github.com/electro-sheep/surface-go2-ubuntu.git
 cd surface-go2-ubuntu
 ./install.sh          # the fixes
 ./install.sh rice     # optional: the themed desktop
 sudo reboot
 ./check.sh            # after the reboot: shows what's working
 ```
-
-Run it as your normal user, not with `sudo`. It asks for your password once. Running it again is
-safe: each step checks what's already done.
 
 ## What it fixes
 
@@ -88,6 +105,7 @@ measures height in physical pixels (64 max). See the comments in `files/rice/app
 ## Repo layout
 
 ```
+bootstrap.sh               the one-line installer: downloads the repo, runs install.sh
 install.sh                 entry point
 check.sh                   health check (./check.sh --quick skips camera captures)
 modules/*.sh               one file per module

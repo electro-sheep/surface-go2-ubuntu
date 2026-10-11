@@ -13,6 +13,7 @@
 #   desktop   touch-friendly window snapping, Portrait Panel, Calendar Menu Fit, Power Button,
 #             GNOME Software
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
+#             (works on any Ubuntu 24.04 GNOME machine, not just the Surface)
 #   sms       Chatty (texting over the SIM)
 #
 # Options (environment variables):
@@ -26,10 +27,6 @@ export REPO
 
 [[ $EUID -ne 0 ]] || die "run this as your normal user, not with sudo; it asks for your password when it needs it"
 grep -q 'VERSION_ID="24.04"' /etc/os-release || warn "written for Ubuntu 24.04; this is $(. /etc/os-release; echo "$PRETTY_NAME")"
-product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
-if [[ $product != "Surface Go 2" && -z ${FORCE:-} ]]; then
-  die "this is a '$product', not a Surface Go 2 (set FORCE=1 to run anyway)"
-fi
 
 modules=("$@")
 [[ ${#modules[@]} -gt 0 ]] || modules=(system cameras lte desktop)
@@ -38,6 +35,12 @@ modules=("$@")
 for m in "${modules[@]}"; do
   [[ -f $REPO/modules/$m.sh ]] || die "unknown module '$m' (see ./install.sh --help)"
 done
+
+# The rice is plain GNOME and runs on any machine; the other modules are for the Go 2's hardware.
+product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
+if [[ $product != "Surface Go 2" && -z ${FORCE:-} && ${modules[*]} != rice ]]; then
+  die "this is a '$product', not a Surface Go 2; only the rice is for any machine: ./install.sh rice (FORCE=1 runs the rest anyway)"
+fi
 
 sudo -v   # ask for the password once, up front
 for m in "${modules[@]}"; do

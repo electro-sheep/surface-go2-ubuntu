@@ -3,6 +3,7 @@
 # and the `rice` command (menu, wallpapers, battery-saver effects toggle, restore).
 
 RICE=$HOME/.local/share/rice
+[[ -n $SHELL_VERSION ]] || die "the rice needs GNOME Shell (Ubuntu's standard desktop)"
 
 step "Rice: packages"
 apt_install papirus-icon-theme bibata-cursor-theme fonts-inter fonts-jetbrains-mono \
