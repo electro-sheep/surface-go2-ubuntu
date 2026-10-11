@@ -1,0 +1,3 @@
+# Surface Go 2 LTE modem (Microsoft-branded Qualcomm X16): it ignores MBIM until cdc_ncm re-sends
+# SET_NTB_INPUT_SIZE. Changing rx_max/tx_max forces that before ModemManager probes the modem.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wwan*", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="09a5", RUN+="/bin/sh -c 'd=/sys%p/cdc_ncm; for v in 16383 16384; do echo $$v > $$d/rx_max; echo $$v > $$d/tx_max; done'"

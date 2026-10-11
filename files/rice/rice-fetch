@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# rice-fetch — Catppuccin Mocha system fetch (no dependencies)
+
+rgb() { printf '\e[38;2;%sm' "$1"; }
+R=$'\e[0m'; B=$'\e[1m'
+TEXT=$(rgb '205;214;244'); DIM=$(rgb '108;112;134')
+MAUVE=$(rgb '203;166;247'); PINK=$(rgb '245;194;231')
+LABELS=('180;190;254' '203;166;247' '245;194;231' '242;205;205' '245;224;220' '250;179;135' '249;226;175' '166;227;161' '148;226;213' '137;220;235' '116;199;236' '137;180;250' '180;190;254')
+
+# ── facts ──────────────────────────────────────────────────────────────
+. /etc/os-release
+host=$(cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null)
+kernel=$(uname -r)
+up=$(awk '{s=int($1); d=int(s/86400); h=int(s%86400/3600); m=int(s%3600/60);
+  if (d) printf "%dd ", d; if (h) printf "%dh ", h; printf "%dm", m}' /proc/uptime)
+pkgs=$(dpkg-query -f '.\n' -W 2>/dev/null | wc -l)
+shellv="bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
+gsv=$(dpkg-query -W -f '${Version}' gnome-shell 2>/dev/null); gsv=${gsv%%.*}
+de="GNOME ${gsv:-?} · ${XDG_SESSION_TYPE:-?}"
+gget() { gsettings get org.gnome.desktop.interface "$1" 2>/dev/null | tr -d "'"; }
+theme="$(gget gtk-theme) · Catppuccin Mocha"
+icons=$(gget icon-theme)
+font="$(gget font-name | sed 's/ [0-9]*$//') · $(gget monospace-font-name | sed 's/ [0-9]*$//')"
+cpu=$(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo | sed -E 's/\((R|TM)\)//g; s/ CPU//; s/ @.*//; s/  +/ /g')
+cpu="$cpu ($(nproc))"
+mem=$(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.1f / %.1f GiB", (t-a)/1048576, t/1048576}' /proc/meminfo)
+bat=""
+for b in /sys/class/power_supply/BAT*; do
+  [ -r "$b/capacity" ] && bat="$(cat "$b/capacity")% · $(cat "$b/status")" && break
+done
+
+rows=(
+  "os|$PRETTY_NAME"
+  "host|$host"
+  "kernel|$kernel"
+  "uptime|$up"
+  "pkgs|$pkgs (dpkg)"
+  "shell|$shellv"
+  "de|$de"
+  "theme|$theme"
+  "icons|$icons"
+  "font|$font"
+  "cpu|$cpu"
+  "memory|$mem"
+)
+[ -n "$bat" ] && rows+=("battery|$bat")
+
+# ── art: a cat, mauve fading to pink ───────────────────────────────────
+art=(
+  '    /\_____/\    '
+  '   /  o   o  \   '
+  '  ( ==  ^  == )  '
+  '   )         (   '
+  '  (           )  '
+  ' ( (  )   (  ) ) '
+  '(__(__)___(__)__)'
+)
+artcol=('203;166;247' '208;171;243' '214;176;240' '222;181;237' '230;186;235' '238;190;233' '245;194;231')
+
+title="${B}${MAUVE}${USER}${R}${DIM}@${R}${B}${PINK}${host:-$HOSTNAME}${R}"
+sep="${DIM}$(printf '─%.0s' $(seq 1 $(( ${#USER} + 1 + ${#host} ))))${R}"
+
+right=("$title" "$sep")
+i=0
+for r in "${rows[@]}"; do
+  right+=("$(rgb "${LABELS[i % ${#LABELS[@]}]}")${B}$(printf '%-8s' "${r%%|*}")${R}${TEXT}${r#*|}${R}")
+  i=$((i + 1))
+done
+dots=""
+for c in '243;139;168' '250;179;135' '249;226;175' '166;227;161' '148;226;213' '137;180;250' '203;166;247' '245;194;231'; do
+  dots+="$(rgb "$c")● "
+done
+right+=("" "${dots}${R}")
+
+# vertically centre the art against the info column
+n=${#right[@]}; off=$(( (n - ${#art[@]}) / 2 ))
+echo
+for ((l = 0; l < n; l++)); do
+  a=$((l - off))
+  if (( a >= 0 && a < ${#art[@]} )); then
+    printf '  %s%s%s   %s\n' "$(rgb "${artcol[a]}")" "${art[a]}" "$R" "${right[l]}"
+  else
+    printf '  %17s   %s\n' '' "${right[l]}"
+  fi
+done
+echo

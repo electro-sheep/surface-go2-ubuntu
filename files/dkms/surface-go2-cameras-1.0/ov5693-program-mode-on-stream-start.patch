@@ -1,0 +1,19 @@
+--- a/drivers/media/i2c/ov5693.c
++++ b/drivers/media/i2c/ov5693.c
+@@ -976,7 +976,15 @@
+ 			return ret;
+ 
+ 		mutex_lock(&ov5693->lock);
+-		ret = __v4l2_ctrl_handler_setup(&ov5693->ctrls.handler);
++		/*
++		 * The mode is otherwise only written on runtime resume, so a
++		 * format set while the sensor stayed powered (e.g. within the
++		 * autosuspend delay) would never reach the hardware. Program
++		 * the current mode on every stream start.
++		 */
++		ret = ov5693_sensor_init(ov5693);
++		if (!ret)
++			ret = __v4l2_ctrl_handler_setup(&ov5693->ctrls.handler);
+ 		if (ret) {
+ 			mutex_unlock(&ov5693->lock);
+ 			goto err_power_down;

@@ -1,0 +1,9 @@
+{
+  "uuid": "calendar-menu-fit@electro",
+  "name": "Calendar Menu Fit",
+  "description": "Narrows the notification column of the clock drop-down when the drop-down is wider than the screen (e.g. a tablet in portrait), so the whole menu stays on screen.",
+  "shell-version": [
+    "46"
+  ],
+  "version": 1
+}

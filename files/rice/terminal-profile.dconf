@@ -1,0 +1,24 @@
+[/]
+audible-bell=false
+background-color='#1E1E2E'
+background-transparency-percent=8
+bold-color-same-as-fg=true
+bold-is-bright=true
+cursor-background-color='#F5E0DC'
+cursor-blink-mode='on'
+cursor-colors-set=true
+cursor-foreground-color='#1E1E2E'
+cursor-shape='ibeam'
+default-size-columns=86
+default-size-rows=24
+font='JetBrains Mono 11'
+foreground-color='#CDD6F4'
+highlight-background-color='#585B70'
+highlight-colors-set=true
+highlight-foreground-color='#CDD6F4'
+palette=['#45475A', '#F38BA8', '#A6E3A1', '#F9E2AF', '#89B4FA', '#F5C2E7', '#94E2D5', '#BAC2DE', '#585B70', '#F38BA8', '#A6E3A1', '#F9E2AF', '#89B4FA', '#F5C2E7', '#94E2D5', '#A6ADC8']
+scrollbar-policy='never'
+use-system-font=false
+use-theme-colors=false
+use-transparent-background=true
+visible-name='Catppuccin Mocha'

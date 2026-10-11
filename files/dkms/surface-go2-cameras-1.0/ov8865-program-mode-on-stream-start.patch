@@ -1,0 +1,43 @@
+--- a/drivers/media/i2c/ov8865.c
++++ b/drivers/media/i2c/ov8865.c
+@@ -2618,18 +2618,33 @@
+ 	}
+ 
+ 	mutex_lock(&sensor->mutex);
+-	ret = ov8865_sw_standby(sensor, !enable);
+-	mutex_unlock(&sensor->mutex);
+ 
+-	if (ret)
+-		return ret;
++	/*
++	 * Registers are otherwise only written on runtime resume, so if the
++	 * sensor was kept powered (e.g. through the VCM's runtime PM device
++	 * link on IPU3) a mode set since then would never reach the hardware.
++	 * Program the current mode and controls on every stream start.
++	 */
++	if (enable) {
++		ret = ov8865_sensor_init(sensor);
++		if (!ret)
++			ret = __v4l2_ctrl_handler_setup(&sensor->ctrls.handler);
++		if (!ret)
++			ret = ov8865_sw_standby(sensor, false);
++	} else {
++		ret = ov8865_sw_standby(sensor, true);
++	}
++
++	mutex_unlock(&sensor->mutex);
+ 
+-	state->streaming = !!enable;
++	if (!ret)
++		state->streaming = !!enable;
+ 
+-	if (!enable)
++	/* Drop the reference taken above if starting failed, or on stop. */
++	if (ret || !enable)
+ 		pm_runtime_put(sensor->dev);
+ 
+-	return 0;
++	return ret;
+ }
+ 
+ static const struct v4l2_subdev_video_ops ov8865_subdev_video_ops = {

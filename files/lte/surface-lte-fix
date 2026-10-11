@@ -1,0 +1,12 @@
+#!/bin/sh
+# Surface Go 2 LTE modem (Microsoft-branded Qualcomm X16): after resume it can come back without its
+# NTB input size and stop answering MBIM. Re-send it, as 78-surface-lte-fix.rules does on add.
+# Runs before logind signals the resume, so ModemManager re-probes a working modem.
+[ "$1" = post ] || exit 0
+for d in /sys/class/net/wwan*/cdc_ncm; do
+  [ "$(cat "$d/../device/../idVendor" 2>/dev/null)" = 045e ] || continue
+  for v in 16383 16384; do
+    echo $v > "$d/rx_max"
+    echo $v > "$d/tx_max"
+  done
+done

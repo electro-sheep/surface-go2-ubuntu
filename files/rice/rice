@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# rice — control panel for the Catppuccin Mocha desktop
+#   rice                 interactive menu
+#   rice fetch           system fetch
+#   rice wall [seed]     generate a new wallpaper variation
+#   rice effects on|off  toggle blur / window effects / rounded corners (battery saver)
+#   rice apply           re-apply every rice setting
+#   rice status          what's on
+#   rice restore         put the desktop back how it was before the rice
+set -u
+RICE=~/.local/share/rice
+WALLS=~/Pictures/Wallpapers
+EFFECTS=(blur-my-shell@aunetx burn-my-windows@schneegans.github.com rounded-window-corners@fxgn)
+OURS=(openbar@neuromorph just-perfection-desktop@just-perfection blur-my-shell@aunetx
+      burn-my-windows@schneegans.github.com rounded-window-corners@fxgn
+      search-light@icedman.github.com clipboard-indicator@tudmotu.com quick@web.search
+      monitor@astraext.github.io)
+
+rgb() { printf '\e[38;2;%sm' "$1"; }
+R=$'\e[0m'; B=$'\e[1m'
+MAUVE=$(rgb '203;166;247'); PINK=$(rgb '245;194;231'); TEXT=$(rgb '205;214;244')
+DIM=$(rgb '108;112;134'); GREEN=$(rgb '166;227;161'); RED=$(rgb '243;139;168'); BLUE=$(rgb '137;180;250')
+say() { printf '%s❯%s %s\n' "$MAUVE" "$R" "$*"; }
+
+wall() {
+  local seed=${1:-$RANDOM} cur next
+  cur=$(gsettings get org.gnome.desktop.background picture-uri-dark)
+  # alternate between two files so GNOME notices the change and nothing piles up
+  if [[ $cur == *rice-wall-a.png* ]]; then next=$WALLS/rice-wall-b.png; else next=$WALLS/rice-wall-a.png; fi
+  local geo
+  geo=$(gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig \
+        --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null \
+        | grep -oE "'[0-9]+x[0-9]+@[0-9.]+', [0-9]+, [0-9]+, [0-9.]+, [0-9.]+, \[[^]]*\], \{'is-current'" \
+        | grep -oE "^'[0-9]+x[0-9]+" | tr -d "'" \
+        | awk -Fx '{print $1*$2, $0}' | sort -n | tail -1 | cut -d' ' -f2)  # largest screen
+  say "painting wallpaper ${PINK}#$seed${R} at ${geo:-1920x1280}…"
+  mkdir -p "$WALLS"
+  (cd /tmp && python3 -I "$RICE/wallpaper.py" "${geo:-1920x1280}" "$next" "$seed" >/dev/null) || { say "${RED}failed${R}"; return 1; }
+  for k in picture-uri picture-uri-dark; do gsettings set org.gnome.desktop.background $k "file://$next"; done
+  gsettings set org.gnome.desktop.screensaver picture-uri "file://$next"
+  say "${GREEN}done${R} — run again for another, or ${B}rice wall $seed${R} to get this one back"
+}
+
+effects() {
+  case ${1:-} in
+    on)  for e in "${EFFECTS[@]}"; do gnome-extensions enable "$e"; done; say "effects ${GREEN}on${R}" ;;
+    off) for e in "${EFFECTS[@]}"; do gnome-extensions disable "$e"; done; say "effects ${RED}off${R} (battery saver)" ;;
+    *)   if gnome-extensions info "${EFFECTS[1]}" 2>/dev/null | grep -q 'State: ACTIVE'; then effects off; else effects on; fi ;;
+  esac
+}
+
+status() {
+  printf '\n  %s%sextensions%s\n' "$B" "$MAUVE" "$R"
+  for e in "${OURS[@]}"; do
+    local st; st=$(gnome-extensions info "$e" 2>/dev/null | awk '/State/{print $2}')
+    local c=$RED; [[ $st == ACTIVE ]] && c=$GREEN
+    printf '  %s●%s %-62s %s%s%s\n' "$c" "$R" "$e" "$DIM" "${st:-missing}" "$R"
+  done
+  printf '\n  %s%slook%s\n' "$B" "$MAUVE" "$R"
+  for k in gtk-theme icon-theme cursor-theme font-name; do
+    printf '  %s%-13s%s %s\n' "$BLUE" "$k" "$R" "$(gsettings get org.gnome.desktop.interface $k)"
+  done
+  printf '  %s%-13s%s %s\n\n' "$BLUE" "wallpaper" "$R" "$(gsettings get org.gnome.desktop.background picture-uri-dark | sed "s|file://$HOME|~|")"
+}
+
+restore() {
+  local bk=$RICE/backup/dconf-before-rice.ini
+  [[ -f $bk ]] || { say "${RED}no backup at $bk${R}"; return 1; }
+  printf '%s❯%s Restore the desktop to how it was before the rice? Extensions stay installed but are switched off. [y/N] ' "$RED" "$R"
+  read -r ans; [[ $ans == [yY]* ]] || { say "cancelled"; return; }
+  for p in /org/gnome/desktop/interface/ /org/gnome/desktop/background/ /org/gnome/shell/extensions/dash-to-dock/ \
+           /org/gnome/shell/extensions/ding/ /org/gnome/terminal/legacy/; do
+    dconf reset -f "$p"
+  done
+  for k in /org/gnome/shell/enabled-extensions /org/gnome/desktop/screensaver/picture-uri \
+           /org/gnome/desktop/wm/keybindings/switch-input-source /org/gnome/desktop/wm/preferences/button-layout \
+           /org/gnome/desktop/wm/preferences/titlebar-font; do
+    dconf reset "$k"
+  done
+  dconf load / < "$bk"
+  for f in ~/.config/gtk-3.0/gtk.css ~/.config/gtk-4.0/gtk.css; do [[ -f $f ]] && mv "$f" "$f.rice-off"; done
+  sed -i '/# >>> rice >>>/,/# <<< rice <<</d' ~/.bashrc
+  say "${GREEN}restored${R}. Open a new terminal for the stock prompt; ${B}rice apply${R} brings it all back"
+  say "(gtk.css moved to gtk.css.rice-off — rename back to re-enable app colours)"
+}
+
+apply() {
+  for f in ~/.config/gtk-3.0/gtk.css ~/.config/gtk-4.0/gtk.css; do [[ -f $f.rice-off ]] && mv "$f.rice-off" "$f"; done
+  grep -q '# >>> rice >>>' ~/.bashrc || printf '\n# >>> rice >>>\n[ -f ~/.config/rice/shell.bash ] && . ~/.config/rice/shell.bash\n# <<< rice <<<\n' >> ~/.bashrc
+  for e in "${OURS[@]}"; do gnome-extensions enable "$e" 2>/dev/null; done
+  "$RICE/apply.sh" | sed "s/^/  /"
+  local u; u=$(cat "$RICE/terminal-profile-uuid" 2>/dev/null)
+  [[ -n $u ]] && dconf read "/org/gnome/terminal/legacy/profiles:/:$u/visible-name" >/dev/null && \
+    gsettings set org.gnome.Terminal.ProfilesList default "$u"
+}
+
+menu() {
+  while true; do
+    clear
+    printf '\n  %s%s rice %s %s· catppuccin mocha%s\n\n' "$B" "$MAUVE" "$R" "$DIM" "$R"
+    printf '  %s[f]%s fetch           %s[w]%s new wallpaper\n' "$PINK" "$TEXT" "$PINK" "$TEXT"
+    printf '  %s[e]%s toggle effects  %s[s]%s status\n' "$PINK" "$TEXT" "$PINK" "$TEXT"
+    printf '  %s[a]%s re-apply all    %s[r]%s restore stock\n' "$PINK" "$TEXT" "$PINK" "$TEXT"
+    printf '  %s[q]%s quit%s\n\n  ' "$DIM" "$DIM" "$R"
+    read -rsn1 k; echo
+    case $k in
+      f) rice-fetch ;;  w) wall ;;  e) effects ;;  s) status ;;
+      a) apply ;;  r) restore ;;  q|'') break ;;  *) continue ;;
+    esac
+    printf '\n  %spress any key…%s' "$DIM" "$R"; read -rsn1
+  done
+}
+
+case ${1:-menu} in
+  menu) menu ;;
+  fetch) rice-fetch ;;
+  wall|wallpaper) wall "${2:-}" ;;
+  effects) effects "${2:-}" ;;
+  status) status ;;
+  apply) apply ;;
+  restore) restore ;;
+  -h|--help|help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "unknown: $1 (try rice --help)"; exit 1 ;;
+esac

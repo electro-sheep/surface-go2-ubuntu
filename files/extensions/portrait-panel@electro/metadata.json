@@ -1,0 +1,7 @@
+{
+  "uuid": "portrait-panel@electro",
+  "name": "Portrait Panel",
+  "description": "In portrait orientation, show the battery percentage and hide the mobile data (4G) icon in the top bar.",
+  "shell-version": ["46"],
+  "version": 1
+}
