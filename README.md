@@ -14,7 +14,7 @@ On the fresh install, connected to Wi-Fi:
 ```bash
 sudo apt install -y git gh
 gh auth login                 # private repo: sign in once (choose GitHub.com → HTTPS → browser)
-gh repo clone surface-go2-ubuntu
+gh repo clone electro-sheep/surface-go2-ubuntu
 cd surface-go2-ubuntu
 ./install.sh          # the fixes
 ./install.sh rice     # optional: the themed desktop
