@@ -41,4 +41,4 @@ main() {
 
 # Piped into bash, stdin is this script; hand the installer the terminal instead. Calling main
 # on the last line also means nothing runs if the download was cut short.
-if [[ -t 0 ]]; then main "$@"; else main "$@" </dev/tty; fi
+if [[ ! -t 0 ]] && { : </dev/tty; } 2>/dev/null; then main "$@" </dev/tty; else main "$@"; fi
