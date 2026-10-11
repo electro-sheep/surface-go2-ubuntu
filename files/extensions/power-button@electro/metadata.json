@@ -1,0 +1,8 @@
+{
+  "uuid": "power-button@electro",
+  "name": "Power Button",
+  "description": "With music playing, the power button locks and turns the screen off and the music keeps going (Bluetooth stays connected, Power Saver held), suspending once it has stopped for 5 minutes. With nothing playing it suspends as before, and with the screen off it just wakes it.",
+  "shell-version": ["46"],
+  "session-modes": ["user", "unlock-dialog"],
+  "version": 1
+}

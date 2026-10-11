@@ -45,6 +45,7 @@ safe: each step checks what's already done.
 | | App Center won't shrink below 852×652, bigger than the screen at 2×, so it hangs off the edges and can't maximise | installs **GNOME Software** (fits phone width) for snaps and debs, hides App Center; no background service, auto-downloads or update pop-ups (Software Updater still announces updates), debs preferred |
 | | in portrait, the clock's calendar drop-down (~670px) is wider than the screen (640px) and hangs off the left | **Calendar Menu Fit** extension: narrows its notification column to 300px |
 | | in portrait, the top-bar icons are cramped and run into the bar's rounded edge; apps open at landscape sizes | **Portrait Panel** extension: in portrait only, hides the 4G icon, gives the icons one even gap and opens new app windows maximised (on a portrait screen only, so an external monitor behaves normally) |
+| | the power button always suspends, so music stops and Bluetooth headphones disconnect | **Power Button** extension: with music playing it locks and turns the screen off and the music keeps going, with Power Saver held until you unlock (the lock also unloads most extensions); 5 minutes after the music stops it suspends. With nothing playing it suspends as before, and with the screen off it just wakes it |
 
 Optional modules:
 
@@ -93,7 +94,7 @@ modules/*.sh               one file per module
 files/dkms/                patched ov5693/ov8865 sources + the .patch files + dkms.conf
 files/lte/                 udev rule + system-sleep hook
 files/system/              zram, sysctl and journald config
-files/extensions/          Portrait Panel, Calendar Menu Fit, Rice Style
+files/extensions/          Portrait Panel, Calendar Menu Fit, Power Button, Rice Style
 files/rice/                theme scripts, CSS, terminal profile, wallpaper generator
 ```
 

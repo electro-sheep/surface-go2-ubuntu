@@ -10,7 +10,8 @@
 #             no NetworkManager-wait-online, no boot splash, VA-API check
 #   cameras   libcamera userspace + IPA tuning symlinks + patched sensor drivers (DKMS)
 #   lte       LTE modem wake-up fix (udev + resume hook), physical SIM slot, optional APN
-#   desktop   touch-friendly window snapping, Portrait Panel, Calendar Menu Fit, GNOME Software
+#   desktop   touch-friendly window snapping, Portrait Panel, Calendar Menu Fit, Power Button,
+#             GNOME Software
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #   sms       Chatty (texting over the SIM)
 #

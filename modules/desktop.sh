@@ -16,6 +16,15 @@ ext_install_local portrait-panel@electro
 ext_enable portrait-panel@electro
 need_logout=1
 
+step "Desktop: Power Button (screen off, music keeps playing)"
+# The power button suspends, which stops music and drops Bluetooth headphones. With music playing
+# the extension locks and turns the screen off instead, holds Power Saver until unlock, and
+# suspends once the music has stopped for 5 minutes. Otherwise the button suspends as before; with
+# the screen off it just wakes it.
+ext_install_local power-button@electro
+ext_enable power-button@electro
+need_logout=1
+
 step "Desktop: GNOME Software instead of App Center"
 # App Center's window can't shrink below 852x652, which is bigger than the screen at 2x scaling
 # in both orientations (640x960 portrait, 960x640 landscape), so it hangs off the edges and can't
