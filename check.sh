@@ -63,6 +63,8 @@ t "Calendar Menu Fit enabled"        bash -c "gsettings get org.gnome.shell enab
 t "Power Button enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q power-button@electro"
 t "GNOME Software installed"         dpkg -s gnome-software-plugin-snap
 t "GNOME Software not autostarting"  grep -q "^Hidden=true" "$HOME/.config/autostart/org.gnome.Software.desktop"
+t "App Center removed"               bash -c "! snap list snap-store"
+t "App Center not in the dock"       bash -c "! gsettings get org.gnome.shell favorite-apps | grep -q snap-store"
 if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "rice installed"                 test -x "$HOME/.local/bin/rice"
   t "Open Bar active"                bash -c "gnome-extensions info openbar@neuromorph | grep -q 'State: ACTIVE'"

@@ -39,12 +39,17 @@ gsettings set org.gnome.software download-updates false
 gsettings set org.gnome.software packaging-format-preference "['deb', 'snap']"
 # no "Updates Available to Download" pop-ups: Ubuntu's Software Updater already announces updates
 gsettings set org.gnome.desktop.notifications.application:/org/gnome/desktop/notifications/application/org-gnome-software/ enable false
-# one store in the app grid: hide App Center (still installed, so it can come back)
-snapstore=/var/lib/snapd/desktop/applications/snap-store_snap-store.desktop
-if [[ -f $snapstore ]]; then
-  sed '/^NoDisplay=/d; /^\[Desktop Entry\]/a NoDisplay=true' "$snapstore" > ~/.local/share/applications/snap-store_snap-store.desktop
+# one store: uninstall App Center (`sudo snap install snap-store` brings it back), unpin it from
+# the dock and open .deb files in GNOME Software instead
+if snap list snap-store >/dev/null 2>&1; then
+  sudo snap remove snap-store
 fi
-ok "GNOME Software installed (in the app grid, not pinned to the dock), App Center hidden"
+rm -f ~/.local/share/applications/snap-store_snap-store.desktop   # older versions only hid it
+favs=$(gsettings get org.gnome.shell favorite-apps)
+favs=$(python3 -I -c 'import ast,sys; l=ast.literal_eval(sys.argv[1].replace("@as ","")); print([a for a in l if not a.startswith("snap-store_")])' "$favs")
+gsettings set org.gnome.shell favorite-apps "$favs"
+xdg-mime default gnome-software-local-file-packagekit.desktop application/vnd.debian.binary-package
+ok "GNOME Software installed (in the app grid, not pinned to the dock), App Center removed"
 
 step "Desktop: Calendar Menu Fit (clock drop-down fits in portrait)"
 # The drop-down is ~670px wide (Yaru's 29em notification column plus the calendar), wider than the
