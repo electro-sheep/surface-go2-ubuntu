@@ -10,16 +10,15 @@
 #             no NetworkManager-wait-online, no boot splash, VA-API check
 #   cameras   libcamera userspace + IPA tuning symlinks + patched sensor drivers (DKMS)
 #   lte       LTE modem wake-up fix (udev + resume hook), physical SIM slot, optional APN
-#   desktop   touch-friendly window snapping, Portrait Panel extension
+#   desktop   touch-friendly window snapping, Portrait Panel, Calendar Menu Fit, GNOME Software
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #   sms       Chatty (texting over the SIM)
 #
 # Options (environment variables):
 #   APN=giffgaff.com APN_USER=giffgaff APN_PASS=password APN_NAME=giffgaff ./install.sh lte
-#   CALENDAR_FIT=1 ./install.sh desktop   also enable the (experimental) Calendar Menu Fit extension
 #   FORCE=1                               skip the "is this a Surface Go 2?" check
 set -euo pipefail
-[[ ${1:-} == -h || ${1:-} == --help ]] && { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+[[ ${1:-} == -h || ${1:-} == --help ]] && { sed -n '2,/^set /{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 REPO=$(cd "$(dirname "$0")" && pwd)
 export REPO
 . "$REPO/modules/common.sh"

@@ -1,0 +1,7 @@
+/* The clock drop-down is the notification column plus the calendar column. Yaru makes the
+ * notification column 29em (~375px), so the menu is ~670px wide and hangs off a 640px-wide
+ * portrait screen. 300px keeps the whole menu (~590px) on screen; in landscape it's only a
+ * slightly narrower notification column. #uiGroup outranks the theme's .message-list rule. */
+#uiGroup .message-list {
+    width: 300px;
+}

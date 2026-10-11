@@ -46,12 +46,18 @@ export default class PortraitPanelExtension extends Extension {
 
     _maximizeNew(win) {
         // Only ordinary, resizable app windows: not dialogs, splash screens or desktop icons.
-        if (!this._portrait || win.get_window_type() !== Meta.WindowType.NORMAL ||
-            win.get_transient_for() || win.is_skip_taskbar() || !win.can_maximize())
+        if (win.get_window_type() !== Meta.WindowType.NORMAL || win.get_transient_for() ||
+            win.is_skip_taskbar() || !win.can_maximize())
             return;
         // Let the app finish setting up its window first, or its own initial size can win.
         global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
-            if (win.get_compositor_private() && !win.is_fullscreen() &&
+            // Judge by the screen the window opened on, so a landscape external monitor
+            // keeps normal behaviour while the tablet is in portrait.
+            const monitor = win.get_monitor();
+            if (monitor < 0 || !win.get_compositor_private())
+                return GLib.SOURCE_REMOVE;
+            const {width, height} = global.display.get_monitor_geometry(monitor);
+            if (height > width && !win.is_fullscreen() &&
                 win.get_maximized() !== Meta.MaximizeFlags.BOTH)
                 win.maximize(Meta.MaximizeFlags.BOTH);
             return GLib.SOURCE_REMOVE;

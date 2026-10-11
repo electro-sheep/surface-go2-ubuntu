@@ -42,8 +42,9 @@ safe: each step checks what's already done.
 | | SIM disappears after suspend | `system-sleep` hook that does the same on resume |
 | | modem is mapped to the empty eSIM | maps it to the physical SIM slot (`mbimcli --ms-set-device-slot-mappings=0`) |
 | `desktop` | touch-dragging a window snaps it to whichever half the **mouse cursor** was last near | turns off Ubuntu's Tiling Assistant, so GNOME's own snapping (which follows your finger) is used |
-| | App Center won't shrink below 852×652, bigger than the screen at 2×, so it hangs off the edges and can't maximise | installs **GNOME Software** (fits phone width) for snaps and debs, hides App Center; no background service or auto-downloads, debs preferred |
-| | in portrait, the top-bar icons are cramped and run into the bar's rounded edge; apps open at landscape sizes | **Portrait Panel** extension: in portrait only, hides the 4G icon, gives the icons one even gap and opens new app windows maximised |
+| | App Center won't shrink below 852×652, bigger than the screen at 2×, so it hangs off the edges and can't maximise | installs **GNOME Software** (fits phone width) for snaps and debs, hides App Center; no background service, auto-downloads or update pop-ups (Software Updater still announces updates), debs preferred |
+| | in portrait, the clock's calendar drop-down (~670px) is wider than the screen (640px) and hangs off the left | **Calendar Menu Fit** extension: narrows its notification column to 300px |
+| | in portrait, the top-bar icons are cramped and run into the bar's rounded edge; apps open at landscape sizes | **Portrait Panel** extension: in portrait only, hides the 4G icon, gives the icons one even gap and opens new app windows maximised (on a portrait screen only, so an external monitor behaves normally) |
 
 Optional modules:
 
@@ -60,8 +61,6 @@ Optional modules:
 # create the mobile-data connection too (example: giffgaff UK)
 APN=giffgaff.com APN_USER=giffgaff APN_PASS=password APN_NAME=giffgaff ./install.sh lte
 
-# experimental: narrow the clock drop-down so it fits in portrait
-CALENDAR_FIT=1 ./install.sh desktop
 ```
 
 Without `APN=…` you can add mobile data in **Settings → Mobile Network**.
