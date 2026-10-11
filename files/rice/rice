@@ -3,7 +3,8 @@
 #   rice                 interactive menu
 #   rice fetch           system fetch
 #   rice wall [seed]     generate a new wallpaper variation
-#   rice effects on|off  toggle blur / window effects / rounded corners (battery saver)
+#   rice effects on|off  blur / window effects / rounded corners on or off (pauses auto)
+#   rice effects auto    effects off on battery or in Power Saver, on otherwise (default)
 #   rice apply           re-apply every rice setting
 #   rice status          what's on
 #   rice restore         put the desktop back how it was before the rice
@@ -41,10 +42,15 @@ wall() {
   say "${GREEN}done${R} — run again for another, or ${B}rice wall $seed${R} to get this one back"
 }
 
+AUTO=rice-effects-auto.service
 effects() {
   case ${1:-} in
-    on)  for e in "${EFFECTS[@]}"; do gnome-extensions enable "$e"; done; say "effects ${GREEN}on${R}" ;;
-    off) for e in "${EFFECTS[@]}"; do gnome-extensions disable "$e"; done; say "effects ${RED}off${R} (battery saver)" ;;
+    auto) systemctl --user enable --now "$AUTO" >/dev/null 2>&1
+          say "effects ${GREEN}auto${R}: off on battery or in Power Saver, on when plugged in" ;;
+    on)  systemctl --user disable --now "$AUTO" >/dev/null 2>&1
+         for e in "${EFFECTS[@]}"; do gnome-extensions enable "$e"; done; say "effects ${GREEN}on${R} (auto paused; ${B}rice effects auto${R} resumes it)" ;;
+    off) systemctl --user disable --now "$AUTO" >/dev/null 2>&1
+         for e in "${EFFECTS[@]}"; do gnome-extensions disable "$e"; done; say "effects ${RED}off${R} (auto paused; ${B}rice effects auto${R} resumes it)" ;;
     *)   if gnome-extensions info "${EFFECTS[1]}" 2>/dev/null | grep -q 'State: ACTIVE'; then effects off; else effects on; fi ;;
   esac
 }
@@ -56,6 +62,8 @@ status() {
     local c=$RED; [[ $st == ACTIVE ]] && c=$GREEN
     printf '  %s●%s %-62s %s%s%s\n' "$c" "$R" "$e" "$DIM" "${st:-missing}" "$R"
   done
+  local mode=manual; systemctl --user is-active --quiet "$AUTO" && mode="auto (off on battery or Power Saver)"
+  printf '  %s●%s %-62s %s%s%s\n' "$BLUE" "$R" "effects" "$DIM" "$mode" "$R"
   printf '\n  %s%slook%s\n' "$B" "$MAUVE" "$R"
   for k in gtk-theme icon-theme cursor-theme font-name; do
     printf '  %s%-13s%s %s\n' "$BLUE" "$k" "$R" "$(gsettings get org.gnome.desktop.interface $k)"
@@ -77,6 +85,7 @@ restore() {
            /org/gnome/desktop/wm/preferences/titlebar-font; do
     dconf reset "$k"
   done
+  systemctl --user disable --now "$AUTO" >/dev/null 2>&1
   dconf load / < "$bk"
   for f in ~/.config/gtk-3.0/gtk.css ~/.config/gtk-4.0/gtk.css; do [[ -f $f ]] && mv "$f" "$f.rice-off"; done
   sed -i '/# >>> rice >>>/,/# <<< rice <<</d' ~/.bashrc
@@ -88,6 +97,7 @@ apply() {
   for f in ~/.config/gtk-3.0/gtk.css ~/.config/gtk-4.0/gtk.css; do [[ -f $f.rice-off ]] && mv "$f.rice-off" "$f"; done
   grep -q '# >>> rice >>>' ~/.bashrc || printf '\n# >>> rice >>>\n[ -f ~/.config/rice/shell.bash ] && . ~/.config/rice/shell.bash\n# <<< rice <<<\n' >> ~/.bashrc
   for e in "${OURS[@]}"; do gnome-extensions enable "$e" 2>/dev/null; done
+  systemctl --user enable "$AUTO" >/dev/null 2>&1; systemctl --user restart "$AUTO" 2>/dev/null
   "$RICE/apply.sh" | sed "s/^/  /"
   local u; u=$(cat "$RICE/terminal-profile-uuid" 2>/dev/null)
   [[ -n $u ]] && dconf read "/org/gnome/terminal/legacy/profiles:/:$u/visible-name" >/dev/null && \

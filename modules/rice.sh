@@ -80,7 +80,7 @@ ok "default profile: Catppuccin Mocha"
 
 step "Rice: scripts, prompt and fetch"
 mkdir -p ~/.local/bin ~/.config/rice "$RICE"
-install -m 755 "$FILES/rice/rice" "$FILES/rice/rice-fetch" ~/.local/bin/
+install -m 755 "$FILES/rice/rice" "$FILES/rice/rice-fetch" "$FILES/rice/rice-effects-auto" ~/.local/bin/
 install -m 755 "$FILES/rice/apply.sh" "$RICE/"
 install -m 644 "$FILES/rice/wallpaper.py" "$FILES/rice/catppuccin-mocha.css" "$RICE/"
 echo "$uuid" > "$RICE/terminal-profile-uuid"
@@ -88,6 +88,15 @@ install -m 644 "$FILES/rice/shell.bash" ~/.config/rice/
 grep -q '# >>> rice >>>' ~/.bashrc || \
   printf '\n# >>> rice >>>\n[ -f ~/.config/rice/shell.bash ] && . ~/.config/rice/shell.bash\n# <<< rice <<<\n' >> ~/.bashrc
 ok "rice, rice-fetch, prompt hook in ~/.bashrc"
+
+step "Rice: effects off on battery or in Power Saver"
+# Blur, window animations and rounded corners cost GPU time; rice-effects-auto turns them off
+# while unplugged or in Power Saver and back on when charging (`rice effects on|off|auto`).
+mkdir -p ~/.config/systemd/user
+install -m 644 "$FILES/rice/rice-effects-auto.service" ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now rice-effects-auto.service
+ok "rice-effects-auto running"
 
 step "Rice: wallpaper"
 mkdir -p ~/Pictures/Wallpapers

@@ -1,0 +1,12 @@
+[Unit]
+Description=Rice: window effects off on battery or in Power Saver
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/rice-effects-auto
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

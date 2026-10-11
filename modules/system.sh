@@ -12,6 +12,17 @@ sudo systemctl daemon-reload
 sudo systemctl restart systemd-zram-setup@zram0.service || warn "zram starts on next boot"
 zramctl | sed 's/^/   /'
 
+step "System: use zram readily"
+sudo install -m 644 "$FILES/system/99-surface-zram.conf" /etc/sysctl.d/
+sudo sysctl -q --load /etc/sysctl.d/99-surface-zram.conf
+ok "swappiness $(cat /proc/sys/vm/swappiness), page-cluster $(cat /proc/sys/vm/page-cluster)"
+
+step "System: cap the system logs at 200 MB"
+sudo install -D -m 644 "$FILES/system/journald-size.conf" /etc/systemd/journald.conf.d/size.conf
+sudo systemctl restart systemd-journald
+sudo journalctl -q --vacuum-size=200M || true
+ok "$(journalctl --disk-usage 2>/dev/null)"
+
 step "System: remove cloud-init"
 if dpkg -s cloud-init >/dev/null 2>&1; then
   sudo apt-get purge -y cloud-init

@@ -6,7 +6,7 @@
 #   ./install.sh <module>...     just the named modules, in the order given
 #
 # Modules:
-#   system    apt cdrom source, installer policy-rc.d, zram, no cloud-init,
+#   system    apt cdrom source, installer policy-rc.d, zram (used readily), log cap, no cloud-init,
 #             no NetworkManager-wait-online, no boot splash, VA-API check
 #   cameras   libcamera userspace + IPA tuning symlinks + patched sensor drivers (DKMS)
 #   lte       LTE modem wake-up fix (udev + resume hook), physical SIM slot, optional APN

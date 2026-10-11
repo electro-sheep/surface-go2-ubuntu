@@ -1,3 +1,5 @@
+import GLib from 'gi://GLib';
+import Meta from 'gi://Meta';
 import NM from 'gi://NM';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -5,7 +7,8 @@ import * as NetworkStatus from 'resource:///org/gnome/shell/ui/status/network.js
 import {Extension, InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 // The top bar is too narrow in portrait, so drop the mobile data (4G) icon there and even out
-// the icon spacing (see stylesheet.css) so the rest fit with room to breathe.
+// the icon spacing (see stylesheet.css) so the rest fit with room to breathe. Apps also open at
+// sizes meant for landscape, so new app windows are maximised in portrait.
 // Landscape keeps GNOME's normal behaviour and the user's settings.
 export default class PortraitPanelExtension extends Extension {
     enable() {
@@ -22,11 +25,13 @@ export default class PortraitPanelExtension extends Extension {
             });
 
         Main.layoutManager.connectObject('monitors-changed', () => this._sync(), this);
+        global.display.connectObject('window-created', (_display, win) => this._maximizeNew(win), this);
         this._sync();
     }
 
     disable() {
         Main.layoutManager.disconnectObject(this);
+        global.display.disconnectObject(this);
         this._injections.clear();
         this._injections = null;
         this._portrait = false;
@@ -37,6 +42,20 @@ export default class PortraitPanelExtension extends Extension {
         const monitor = Main.layoutManager.primaryMonitor;
         this._portrait = !!monitor && monitor.height > monitor.width;
         this._refresh();
+    }
+
+    _maximizeNew(win) {
+        // Only ordinary, resizable app windows: not dialogs, splash screens or desktop icons.
+        if (!this._portrait || win.get_window_type() !== Meta.WindowType.NORMAL ||
+            win.get_transient_for() || win.is_skip_taskbar() || !win.can_maximize())
+            return;
+        // Let the app finish setting up its window first, or its own initial size can win.
+        global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
+            if (win.get_compositor_private() && !win.is_fullscreen() &&
+                win.get_maximized() !== Meta.MaximizeFlags.BOTH)
+                win.maximize(Meta.MaximizeFlags.BOTH);
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _refresh() {

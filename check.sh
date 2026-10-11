@@ -18,6 +18,8 @@ step "System"
 t "no cdrom apt source"              bash -c "! grep -rqsE '^deb .*file:/+cdrom' /etc/apt/sources.list /etc/apt/sources.list.d/"
 t "no installer policy-rc.d"         test ! -e /usr/sbin/policy-rc.d
 t "zram swap active"                 bash -c "swapon --show=NAME | grep -q zram"
+t "zram used readily (swappiness)"   bash -c "[ \$(cat /proc/sys/vm/swappiness) -ge 100 ]"
+t "system logs capped"               test -f /etc/systemd/journald.conf.d/size.conf
 t "cloud-init removed"               bash -c "! dpkg -s cloud-init"
 t "NetworkManager-wait-online off"   bash -c "! systemctl is-enabled -q NetworkManager-wait-online"
 t "no boot splash"                   bash -c "! grep -qE '^GRUB_CMDLINE_LINUX_DEFAULT=.*\bsplash\b' /etc/default/grub"
@@ -63,6 +65,7 @@ if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "rice installed"                 test -x "$HOME/.local/bin/rice"
   t "Open Bar active"                bash -c "gnome-extensions info openbar@neuromorph | grep -q 'State: ACTIVE'"
   t "Rice Style enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q rice-style@electro"
+  t "Effects auto-switch running"    systemctl --user is-active rice-effects-auto.service
 fi
 
 step "Result: $pass passed, $fail failed"

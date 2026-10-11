@@ -224,6 +224,10 @@ gs "${AM[@]}" storage-header-show false
 gs "${AM[@]}" network-header-show false
 gs "${AM[@]}" sensors-header-show false
 gs "${AM[@]}" gpu-header-show false
+# slower polling: fewer CPU wake-ups and bar redraws on battery (hidden monitors slowest)
+gs "${AM[@]}" processor-update 3.0
+gs "${AM[@]}" memory-update 5.0
+for m in storage network sensors gpu; do gs "${AM[@]}" $m-update 10.0; done
 gs "${AM[@]}" processor-header-graph-width 28
 gs "${AM[@]}" processor-header-icon-size "$BAR_ICON"
 gs "${AM[@]}" memory-header-icon-size "$BAR_ICON"

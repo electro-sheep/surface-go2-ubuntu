@@ -1,7 +1,7 @@
 {
   "uuid": "portrait-panel@electro",
   "name": "Portrait Panel",
-  "description": "In portrait orientation, hide the mobile data (4G) icon in the top bar and give the icons even spacing.",
+  "description": "In portrait orientation, hide the mobile data (4G) icon in the top bar, give the icons even spacing, and open new app windows maximised.",
   "shell-version": ["46"],
   "version": 1
 }

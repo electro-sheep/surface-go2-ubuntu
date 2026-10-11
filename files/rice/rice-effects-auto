@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# rice-effects-auto — window effects (blur, animations, rounded corners) off on battery or in
+# Power Saver, back on when plugged in. Runs as the rice-effects-auto user service and reacts to
+# UPower / power-profiles-daemon D-Bus signals, so it doesn't poll. `rice effects on|off` stops
+# it; `rice effects auto` starts it again.
+EFFECTS=(blur-my-shell@aunetx burn-my-windows@schneegans.github.com rounded-window-corners@fxgn)
+UP=(org.freedesktop.UPower /org/freedesktop/UPower)
+PPD=(org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles)
+
+prop() {  # prop <dest> <path> <property> -> bare value, e.g. true / power-saver
+  gdbus call --system --dest "$1" --object-path "$2" --method org.freedesktop.DBus.Properties.Get \
+    "$1" "$3" 2>/dev/null | sed -E "s/^\(<'?//; s/'?>,\)$//"
+}
+
+sync_effects() {
+  local want=on have=off cmd e
+  [[ $(prop "${UP[@]}" OnBattery) == true || $(prop "${PPD[@]}" ActiveProfile) == power-saver ]] && want=off
+  gnome-extensions info "${EFFECTS[1]}" 2>/dev/null | grep -q 'State: ACTIVE' && have=on
+  [[ $want == "$have" ]] && return
+  [[ $want == on ]] && cmd=enable || cmd=disable
+  # retry once: the shell's extensions D-Bus service is sometimes still starting up
+  for e in "${EFFECTS[@]}"; do gnome-extensions "$cmd" "$e" 2>/dev/null || { sleep 1; gnome-extensions "$cmd" "$e"; }; done
+  echo "effects $want"
+}
+
+# GNOME Shell may still be starting when the session launches us
+for _ in {1..30}; do gnome-extensions info "${EFFECTS[1]}" >/dev/null 2>&1 && break; sleep 2; done
+
+sync_effects
+{
+  gdbus monitor --system --dest "${UP[0]}" --object-path "${UP[1]}" &
+  gdbus monitor --system --dest "${PPD[0]}" --object-path "${PPD[1]}" &
+  wait
+} | while read -r line; do
+  case $line in *OnBattery* | *ActiveProfile*) sync_effects ;; esac
+done

@@ -31,7 +31,8 @@ safe: each step checks what's already done.
 |---|---|---|
 | `system` | `apt update` fails on a leftover `file:///cdrom` source | comments it out |
 | | the installer leaves `/usr/sbin/policy-rc.d`, which stops services from starting or restarting | removes it (only if no package owns it) |
-| | 8 GB RAM and no compressed swap | zram swap: half of RAM, zstd |
+| | 8 GB RAM and no compressed swap | zram swap: half of RAM, zstd, used readily (`swappiness` 150, no swap read-ahead) |
+| | system logs grow past 400 MB | caps the journal at 200 MB |
 | | cloud-init and NetworkManager-wait-online slow down boot | purges cloud-init, disables wait-online |
 | | boot splash | drops `splash` from the GRUB command line |
 | | | installs `vainfo` + `intel-media-va-driver` and checks hardware video decode |
@@ -42,7 +43,7 @@ safe: each step checks what's already done.
 | | modem is mapped to the empty eSIM | maps it to the physical SIM slot (`mbimcli --ms-set-device-slot-mappings=0`) |
 | `desktop` | touch-dragging a window snaps it to whichever half the **mouse cursor** was last near | turns off Ubuntu's Tiling Assistant, so GNOME's own snapping (which follows your finger) is used |
 | | App Center won't shrink below 852×652, bigger than the screen at 2×, so it hangs off the edges and can't maximise | installs **GNOME Software** (fits phone width) for snaps and debs, hides App Center; no background service or auto-downloads, debs preferred |
-| | in portrait, the top-bar icons are cramped and run into the bar's rounded edge | **Portrait Panel** extension: in portrait only, hides the 4G icon and gives the icons one even gap |
+| | in portrait, the top-bar icons are cramped and run into the bar's rounded edge; apps open at landscape sizes | **Portrait Panel** extension: in portrait only, hides the 4G icon, gives the icons one even gap and opens new app windows maximised |
 
 Optional modules:
 
@@ -69,14 +70,15 @@ Without `APN=…` you can add mobile data in **Settings → Mobile Network**.
 
 `./install.sh rice` installs:
 
-- **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left and a clipboard menu. Menus and notifications are solid with rounded corners (Blur My Shell's pop-up blur is off, as it can't round its corners on GNOME 46).
+- **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left (updating every 3–5 s to spare the battery) and a clipboard menu. Menus and notifications are solid with rounded corners (Blur My Shell's pop-up blur is off, as it can't round its corners on GNOME 46).
 - **Overview:** search bar tinted to match the bar and dock, via the small **Rice Style** extension.
 - **Dock:** always visible, same colours as the bar, mauve running dots.
 - **Windows:** 12 px rounded corners. Burn My Windows glides windows in and breaks them into mauve hexagons on close.
+- **Battery:** blur, window effects and rounded corners switch off by themselves on battery or in Power Saver and come back when charging (`rice effects on|off|auto`).
 - **Super+Space:** Search Light (Spotlight-style).
 - **Look:** adw-gtk3-dark, Papirus folders recoloured violet, Bibata cursor, Inter and JetBrains Mono, and a Catppuccin GTK colour override.
 - **Terminal:** solid Catppuccin profile, two-line prompt with git branch and error code, and a cat fetch on new tabs that moves the cat above the info when the window is narrow.
-- **`rice` command:** `rice` (menu), `rice wall` (new generated wallpaper), `rice effects off` (battery saver), `rice status`, `rice apply`, `rice restore` (back to stock, using the backup taken at install).
+- **`rice` command:** `rice` (menu), `rice wall` (new generated wallpaper), `rice effects on|off|auto`, `rice status`, `rice apply`, `rice restore` (back to stock, using the backup taken at install).
 
 Log out and back in once afterwards so GNOME loads the new extensions.
 
@@ -91,7 +93,7 @@ check.sh                   health check (./check.sh --quick skips camera capture
 modules/*.sh               one file per module
 files/dkms/                patched ov5693/ov8865 sources + the .patch files + dkms.conf
 files/lte/                 udev rule + system-sleep hook
-files/system/              zram-generator.conf
+files/system/              zram, sysctl and journald config
 files/extensions/          Portrait Panel, Calendar Menu Fit, Rice Style
 files/rice/                theme scripts, CSS, terminal profile, wallpaper generator
 ```
