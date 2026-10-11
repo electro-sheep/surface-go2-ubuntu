@@ -7,7 +7,7 @@ RICE=$HOME/.local/share/rice
 
 step "Rice: packages"
 apt_install papirus-icon-theme bibata-cursor-theme fonts-inter fonts-jetbrains-mono \
-  python3-pil gir1.2-gtop-2.0 gnome-shell-extension-manager curl unzip
+  python3-pil gir1.2-gtop-2.0 gnome-shell-extension-manager gnome-tweaks curl unzip
 
 step "Rice: backup of the current desktop (for 'rice restore')"
 mkdir -p "$RICE/backup"

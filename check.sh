@@ -61,6 +61,8 @@ t "GNOME edge snapping on"           bash -c "gsettings get org.gnome.mutter edg
 t "Portrait Panel enabled"           bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q portrait-panel@electro"
 t "Calendar Menu Fit enabled"        bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q calendar-menu-fit@electro"
 t "Power Button enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q power-button@electro"
+t "power button suspends"            bash -c "gsettings get org.gnome.settings-daemon.plugins.power power-button-action | grep -q suspend"
+t "no idle suspend on AC"            bash -c "gsettings get org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type | grep -q nothing"
 t "GNOME Software installed"         dpkg -s gnome-software-plugin-snap
 t "GNOME Software not autostarting"  grep -q "^Hidden=true" "$HOME/.config/autostart/org.gnome.Software.desktop"
 t "App Center removed"               bash -c "! snap list snap-store"
@@ -70,6 +72,7 @@ if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "Open Bar active"                bash -c "gnome-extensions info openbar@neuromorph | grep -q 'State: ACTIVE'"
   t "Rice Style enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q rice-style@electro"
   t "Effects auto-switch running"    systemctl --user is-active rice-effects-auto.service
+  t "window effects: glitch in, incinerate out" bash -c "grep -q glitch-enable-effect=true ~/.config/burn-my-windows/profiles/*1.conf && grep -q incinerate-enable-effect=true ~/.config/burn-my-windows/profiles/*2.conf"
 fi
 
 step "Result: $pass passed, $fail failed"

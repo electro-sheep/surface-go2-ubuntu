@@ -193,29 +193,22 @@ gs "${SL[@]}" blur-brightness 0.5
 gs "${SL[@]}" scale-width 0.55
 gs "${SL[@]}" scale-height 0.55
 
-echo "• Burn My Windows: glide in, mauve hexagons out"
+echo "• Burn My Windows: glitch in, incinerate out"
 P=~/.config/burn-my-windows/profiles
 mkdir -p "$P"
 rm -f "$P"/*.conf
-cat > "$P/1000000000000001.conf" <<'EOF'
+cat > "$P/1000000000000001.conf" <<'EOF2'
 [burn-my-windows-profile]
 profile-animation-type=1
 fire-enable-effect=false
-glide-enable-effect=true
-glide-animation-time=280
-EOF
-cat > "$P/1000000000000002.conf" <<'EOF'
+glitch-enable-effect=true
+EOF2
+cat > "$P/1000000000000002.conf" <<'EOF2'
 [burn-my-windows-profile]
 profile-animation-type=2
 fire-enable-effect=false
-hexagon-enable-effect=true
-hexagon-animation-time=700
-hexagon-scale=2.0
-hexagon-line-width=1.5
-hexagon-line-color='rgba(203, 166, 247, 0.9)'
-hexagon-glow-color='rgba(245, 194, 231, 0.6)'
-hexagon-additive-blending=true
-EOF
+incinerate-enable-effect=true
+EOF2
 
 echo "• Astra Monitor: CPU + RAM only, mauve, left side of the bar"
 AM=(monitor@astraext.github.io org.gnome.shell.extensions.astra-monitor)
@@ -229,15 +222,23 @@ gs "${AM[@]}" processor-update 3.0
 gs "${AM[@]}" memory-update 5.0
 for m in storage network sensors gpu; do gs "${AM[@]}" $m-update 10.0; done
 gs "${AM[@]}" processor-header-graph-width 28
+gs "${AM[@]}" processor-header-icon true
+gs "${AM[@]}" memory-header-icon true
 gs "${AM[@]}" processor-header-icon-size "$BAR_ICON"
 gs "${AM[@]}" memory-header-icon-size "$BAR_ICON"
 gs "${AM[@]}" processor-header-graph-color1 'rgba(203,166,247,1.0)'
 gs "${AM[@]}" processor-header-graph-color2 'rgba(245,194,231,1.0)'
 gs "${AM[@]}" memory-header-bars-color1 'rgba(203,166,247,1.0)'
 gs "${AM[@]}" memory-header-bars-color2 'rgba(203,166,247,0.3)'
+gs "${AM[@]}" memory-used 'active'
 
 echo "• Workspace Indicator: off (its previews overflow a 960px-wide bar)"
 gnome-extensions disable workspace-indicator@gnome-shell-extensions.gcampax.github.com 2>/dev/null
+
+echo "• Terminal: no menu bar, dark; Files: list view"
+gsettings set org.gnome.Terminal.Legacy.Settings default-show-menubar false
+gsettings set org.gnome.Terminal.Legacy.Settings theme-variant 'dark'
+gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
 
 echo "• Desktop icons: hidden for a clean wallpaper"
 gsettings set org.gnome.shell.extensions.ding show-home false

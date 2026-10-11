@@ -23,7 +23,14 @@ step "Desktop: Power Button (screen off, music keeps playing)"
 # the screen off it just wakes it.
 ext_install_local power-button@electro
 ext_enable power-button@electro
+# the extension hands the button back to gnome-settings-daemon when nothing is playing; Ubuntu's
+# default there is the power-off menu, so make that a plain suspend
+gsettings set org.gnome.settings-daemon.plugins.power power-button-action 'suspend'
 need_logout=1
+
+step "Desktop: no automatic suspend while plugged in"
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
+ok "on battery it still suspends when idle"
 
 step "Desktop: GNOME Software instead of App Center"
 # App Center's window can't shrink below 852x652, which is bigger than the screen at 2x scaling

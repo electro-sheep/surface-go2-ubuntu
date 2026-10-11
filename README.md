@@ -62,7 +62,7 @@ sudo reboot
 | | App Center won't shrink below 852×652, bigger than the screen at 2×, so it hangs off the edges and can't maximise | installs **GNOME Software** (fits phone width) for snaps and debs, uninstalls App Center and unpins it from the dock (`sudo snap install snap-store` brings it back); no background service, auto-downloads or update pop-ups (Software Updater still announces updates), debs preferred |
 | | in portrait, the clock's calendar drop-down (~670px) is wider than the screen (640px) and hangs off the left | **Calendar Menu Fit** extension: narrows its notification column to 300px |
 | | in portrait, the top-bar icons are cramped and run into the bar's rounded edge; apps open at landscape sizes | **Portrait Panel** extension: in portrait only, hides the 4G icon, gives the icons one even gap and opens new app windows maximised (on a portrait screen only, so an external monitor behaves normally) |
-| | the power button always suspends, so music stops and Bluetooth headphones disconnect | **Power Button** extension: with music playing it locks and turns the screen off and the music keeps going, with Power Saver held until you unlock (the lock also unloads most extensions); 5 minutes after the music stops it suspends. With nothing playing it suspends as before, and with the screen off it just wakes it |
+| | the power button always suspends, so music stops and Bluetooth headphones disconnect | **Power Button** extension: with music playing it locks and turns the screen off and the music keeps going, with Power Saver held until you unlock (the lock also unloads most extensions); 5 minutes after the music stops it suspends. With nothing playing it suspends (not Ubuntu's power-off menu), and with the screen off it just wakes it |
 
 Optional modules:
 
@@ -90,7 +90,7 @@ Without `APN=…` you can add mobile data in **Settings → Mobile Network**.
 - **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left (updating every 3–5 s to spare the battery) and a clipboard menu. Menus and notifications are solid with rounded corners (Blur My Shell's pop-up blur is off, as it can't round its corners on GNOME 46).
 - **Overview:** search bar tinted to match the bar and dock, via the small **Rice Style** extension.
 - **Dock:** always visible, same colours as the bar, mauve running dots.
-- **Windows:** 12 px rounded corners. Burn My Windows glides windows in and breaks them into mauve hexagons on close.
+- **Windows:** 12 px rounded corners. Burn My Windows glitches windows in and burns them away (Incinerate) on close.
 - **Battery:** blur, window effects and rounded corners switch off by themselves on battery or in Power Saver and come back when charging (`rice effects on|off|auto`).
 - **Super+Space:** Search Light (Spotlight-style).
 - **Look:** adw-gtk3-dark, Papirus folders recoloured violet, Bibata cursor, Inter and JetBrains Mono, and a Catppuccin GTK colour override.
