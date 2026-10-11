@@ -22,7 +22,15 @@ main() {
 
   if [[ -d $dir/.git ]]; then
     echo "==> Updating $dir"
-    git -C "$dir" pull --ff-only
+    # It's a download, so make it match GitHub exactly. Files changed here are stashed, not lost
+    # (a stash needs a name and email, and a fresh machine may have none set).
+    if [[ -n $(git -C "$dir" status --porcelain --untracked-files=no) ]]; then
+      git -C "$dir" -c user.name=bootstrap -c user.email=bootstrap@localhost \
+        stash push -q -m "local changes before update on $(date +%F)"
+      echo "   your changes there were put aside; see them with: git -C $dir stash show -p"
+    fi
+    git -C "$dir" fetch -q --depth 1 "$url" main
+    git -C "$dir" reset -q --hard FETCH_HEAD
   else
     echo "==> Downloading to $dir"
     git clone --depth 1 "$url" "$dir"
