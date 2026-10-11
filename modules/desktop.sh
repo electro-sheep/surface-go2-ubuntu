@@ -35,14 +35,7 @@ snapstore=/var/lib/snapd/desktop/applications/snap-store_snap-store.desktop
 if [[ -f $snapstore ]]; then
   sed '/^NoDisplay=/d; /^\[Desktop Entry\]/a NoDisplay=true' "$snapstore" > ~/.local/share/applications/snap-store_snap-store.desktop
 fi
-python3 -I - <<'PY'
-import ast, subprocess
-cur = subprocess.run(['gsettings', 'get', 'org.gnome.shell', 'favorite-apps'], capture_output=True, text=True).stdout.strip()
-fav = list(ast.literal_eval(cur.replace('@as ', ''))) if cur not in ('@as []', '[]') else []
-if 'org.gnome.Software.desktop' not in fav:
-    subprocess.run(['gsettings', 'set', 'org.gnome.shell', 'favorite-apps', str(fav + ['org.gnome.Software.desktop'])], check=True)
-PY
-ok "GNOME Software in the dock, App Center hidden"
+ok "GNOME Software installed (in the app grid, not pinned to the dock), App Center hidden"
 
 step "Desktop: Calendar Menu Fit (clock drop-down fits in portrait)"
 # The drop-down is ~670px wide (Yaru's 29em notification column plus the calendar), wider than the
