@@ -11,7 +11,7 @@ done
 gsettings set org.gnome.mutter edge-tiling true
 ok "Tiling Assistant off, GNOME edge snapping on"
 
-step "Desktop: Portrait Panel (battery % instead of the 4G icon in portrait)"
+step "Desktop: Portrait Panel (even top-bar icons, no 4G icon in portrait)"
 ext_install_local portrait-panel@electro
 ext_enable portrait-panel@electro
 need_logout=1

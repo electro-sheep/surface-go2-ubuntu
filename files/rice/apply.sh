@@ -90,7 +90,7 @@ gs "${OB[@]}" gradient false
 gs "${OB[@]}" candybar false
 gs "${OB[@]}" accent-override true
 gs "${OB[@]}" menustyle true
-gs "${OB[@]}" mbgalpha 0.90
+gs "${OB[@]}" mbgalpha 1.0
 gs "${OB[@]}" mbalpha 0.25
 gs "${OB[@]}" mfgalpha 1.0
 gs "${OB[@]}" mhalpha 0.25
@@ -98,7 +98,7 @@ gs "${OB[@]}" msalpha 0.85
 gs "${OB[@]}" mshalpha 0.20
 gs "${OB[@]}" smbgalpha 0.95
 gs "${OB[@]}" smbgoverride true
-gs "${OB[@]}" menu-radius 16.0
+gs "${OB[@]}" menu-radius 20.0
 gs "${OB[@]}" notif-radius 14.0
 gs "${OB[@]}" qtoggle-radius 50.0
 gs "${OB[@]}" apply-menu-shell true
@@ -168,6 +168,7 @@ gs $B $BS.dash-to-dock blur false
 gs $B $BS.overview blur true
 gs $B $BS.appfolder blur true
 gs $B $BS.lockscreen blur true
+gs $B $BS.popup blur false   # its live blur can't round corners on GNOME 46
 
 echo "• Rounded window corners: 12px, mauve hairline on focus"
 R=(rounded-window-corners@fxgn org.gnome.shell.extensions.rounded-window-corners-reborn)

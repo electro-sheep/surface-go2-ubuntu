@@ -57,13 +57,29 @@ art=(
 )
 artcol=('203;166;247' '208;171;243' '214;176;240' '222;181;237' '230;186;235' '238;190;233' '245;194;231')
 
+# ── layout: the cat beside the info when the window is wide enough, above it when not ───
+cols=$(stty size </dev/tty 2>/dev/null | cut -d' ' -f2)
+[[ $cols =~ ^[0-9]+$ ]] || cols=$(tput cols 2>/dev/null || echo 80)
+artw=${#art[0]}
+infow=$(( ${#USER} + 1 + ${#host} ))
+for r in "${rows[@]}"; do v=${r#*|}; (( 8 + ${#v} > infow )) && infow=$(( 8 + ${#v} )); done
+if (( cols >= 2 + artw + 3 + infow )); then
+  side=1; avail=$(( cols - 2 - artw - 3 ))
+else
+  side=0; avail=$(( cols - 2 ))
+fi
+maxv=$(( avail - 8 ))   # room for a value after its 8-wide label; shorten only when it won't fit
+(( maxv < 4 )) && maxv=4
+
 title="${B}${MAUVE}${USER}${R}${DIM}@${R}${B}${PINK}${host:-$HOSTNAME}${R}"
 sep="${DIM}$(printf '─%.0s' $(seq 1 $(( ${#USER} + 1 + ${#host} ))))${R}"
 
 right=("$title" "$sep")
 i=0
 for r in "${rows[@]}"; do
-  right+=("$(rgb "${LABELS[i % ${#LABELS[@]}]}")${B}$(printf '%-8s' "${r%%|*}")${R}${TEXT}${r#*|}${R}")
+  v=${r#*|}
+  (( ${#v} > maxv )) && v="${v:0:maxv-1}…"
+  right+=("$(rgb "${LABELS[i % ${#LABELS[@]}]}")${B}$(printf '%-8s' "${r%%|*}")${R}${TEXT}${v}${R}")
   i=$((i + 1))
 done
 dots=""
@@ -72,15 +88,26 @@ for c in '243;139;168' '250;179;135' '249;226;175' '166;227;161' '148;226;213' '
 done
 right+=("" "${dots}${R}")
 
-# vertically centre the art against the info column
-n=${#right[@]}; off=$(( (n - ${#art[@]}) / 2 ))
 echo
-for ((l = 0; l < n; l++)); do
-  a=$((l - off))
-  if (( a >= 0 && a < ${#art[@]} )); then
-    printf '  %s%s%s   %s\n' "$(rgb "${artcol[a]}")" "${art[a]}" "$R" "${right[l]}"
-  else
-    printf '  %17s   %s\n' '' "${right[l]}"
-  fi
-done
+if (( side )); then
+  # vertically centre the art against the info column
+  n=${#right[@]}; off=$(( (n - ${#art[@]}) / 2 ))
+  for ((l = 0; l < n; l++)); do
+    a=$((l - off))
+    if (( a >= 0 && a < ${#art[@]} )); then
+      printf '  %s%s%s   %s\n' "$(rgb "${artcol[a]}")" "${art[a]}" "$R" "${right[l]}"
+    else
+      printf "  %${artw}s   %s\n" '' "${right[l]}"
+    fi
+  done
+else
+  # narrow window: the art centred above the info column
+  shown=$(( infow < avail ? infow : avail ))
+  pad=$(( 2 + (shown > artw ? (shown - artw) / 2 : 0) ))
+  for ((a = 0; a < ${#art[@]}; a++)); do
+    printf '%*s%s%s%s\n' "$pad" '' "$(rgb "${artcol[a]}")" "${art[a]}" "$R"
+  done
+  echo
+  for l in "${right[@]}"; do printf '  %s\n' "$l"; done
+fi
 echo

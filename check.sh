@@ -60,6 +60,7 @@ t "Portrait Panel enabled"           bash -c "gsettings get org.gnome.shell enab
 if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "rice installed"                 test -x "$HOME/.local/bin/rice"
   t "Open Bar active"                bash -c "gnome-extensions info openbar@neuromorph | grep -q 'State: ACTIVE'"
+  t "Rice Style enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q rice-style@electro"
 fi
 
 step "Result: $pass passed, $fail failed"

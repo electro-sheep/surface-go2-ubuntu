@@ -1,0 +1,9 @@
+{
+  "uuid": "rice-style@electro",
+  "name": "Rice Style",
+  "description": "Small Catppuccin Mocha colour fixes for shell parts the rice extensions can't style, such as the overview search bar.",
+  "shell-version": [
+    "46"
+  ],
+  "version": 1
+}

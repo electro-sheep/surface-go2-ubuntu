@@ -41,7 +41,7 @@ safe: each step checks what's already done.
 | | SIM disappears after suspend | `system-sleep` hook that does the same on resume |
 | | modem is mapped to the empty eSIM | maps it to the physical SIM slot (`mbimcli --ms-set-device-slot-mappings=0`) |
 | `desktop` | touch-dragging a window snaps it to whichever half the **mouse cursor** was last near | turns off Ubuntu's Tiling Assistant, so GNOME's own snapping (which follows your finger) is used |
-| | in portrait, the 4G icon crowds out the battery | **Portrait Panel** extension: battery % instead of the 4G icon in portrait only |
+| | in portrait, the top-bar icons are cramped and run into the bar's rounded edge | **Portrait Panel** extension: in portrait only, hides the 4G icon and gives the icons one even gap |
 
 Optional modules:
 
@@ -68,12 +68,13 @@ Without `APN=…` you can add mobile data in **Settings → Mobile Network**.
 
 `./install.sh rice` installs:
 
-- **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left and a clipboard menu.
+- **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left and a clipboard menu. Menus and notifications are solid with rounded corners (Blur My Shell's pop-up blur is off, as it can't round its corners on GNOME 46).
+- **Overview:** search bar tinted to match the bar and dock, via the small **Rice Style** extension.
 - **Dock:** always visible, same colours as the bar, mauve running dots.
 - **Windows:** 12 px rounded corners. Burn My Windows glides windows in and breaks them into mauve hexagons on close.
 - **Super+Space:** Search Light (Spotlight-style).
 - **Look:** adw-gtk3-dark, Papirus folders recoloured violet, Bibata cursor, Inter and JetBrains Mono, and a Catppuccin GTK colour override.
-- **Terminal:** Catppuccin profile, two-line prompt with git branch and error code, and a cat fetch on new tabs.
+- **Terminal:** solid Catppuccin profile, two-line prompt with git branch and error code, and a cat fetch on new tabs that moves the cat above the info when the window is narrow.
 - **`rice` command:** `rice` (menu), `rice wall` (new generated wallpaper), `rice effects off` (battery saver), `rice status`, `rice apply`, `rice restore` (back to stock, using the backup taken at install).
 
 Log out and back in once afterwards so GNOME loads the new extensions.
@@ -90,7 +91,7 @@ modules/*.sh               one file per module
 files/dkms/                patched ov5693/ov8865 sources + the .patch files + dkms.conf
 files/lte/                 udev rule + system-sleep hook
 files/system/              zram-generator.conf
-files/extensions/          Portrait Panel, Calendar Menu Fit
+files/extensions/          Portrait Panel, Calendar Menu Fit, Rice Style
 files/rice/                theme scripts, CSS, terminal profile, wallpaper generator
 ```
 

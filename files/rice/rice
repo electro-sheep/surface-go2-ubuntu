@@ -14,7 +14,7 @@ EFFECTS=(blur-my-shell@aunetx burn-my-windows@schneegans.github.com rounded-wind
 OURS=(openbar@neuromorph just-perfection-desktop@just-perfection blur-my-shell@aunetx
       burn-my-windows@schneegans.github.com rounded-window-corners@fxgn
       search-light@icedman.github.com clipboard-indicator@tudmotu.com quick@web.search
-      monitor@astraext.github.io)
+      monitor@astraext.github.io rice-style@electro)
 
 rgb() { printf '\e[38;2;%sm' "$1"; }
 R=$'\e[0m'; B=$'\e[1m'

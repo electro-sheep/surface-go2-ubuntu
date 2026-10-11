@@ -62,6 +62,9 @@ RICE_EXTS=(openbar@neuromorph just-perfection-desktop@just-perfection blur-my-sh
 for e in "${RICE_EXTS[@]}"; do
   ext_install_ego "$e" && ext_enable "$e"
 done
+# local: Catppuccin colour fixes for shell parts the extensions above can't style
+ext_install_local rice-style@electro
+ext_enable rice-style@electro
 need_logout=1
 
 step "Rice: Catppuccin Mocha terminal profile"
