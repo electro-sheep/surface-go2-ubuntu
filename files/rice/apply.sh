@@ -222,8 +222,16 @@ gs "${AM[@]}" processor-update 3.0
 gs "${AM[@]}" memory-update 5.0
 for m in storage network sensors gpu; do gs "${AM[@]}" $m-update 10.0; done
 gs "${AM[@]}" processor-header-graph-width 28
-gs "${AM[@]}" processor-header-icon true
-gs "${AM[@]}" memory-header-icon true
+# what shows in the bar: CPU = icon + graph, RAM = icon + bar, no numbers. Set every switch, so
+# options changed on this machine before (percentages, say) can't make it look different.
+for k in processor-header-icon processor-header-graph memory-header-icon memory-header-bars; do
+  gs "${AM[@]}" $k true
+done
+for k in processor-header-percentage processor-header-percentage-core processor-header-bars \
+         processor-header-bars-core processor-header-frequency memory-header-percentage \
+         memory-header-value memory-header-free memory-header-graph compact-mode; do
+  gs "${AM[@]}" $k false
+done
 gs "${AM[@]}" processor-header-icon-size "$BAR_ICON"
 gs "${AM[@]}" memory-header-icon-size "$BAR_ICON"
 gs "${AM[@]}" processor-header-graph-color1 'rgba(203,166,247,1.0)'
