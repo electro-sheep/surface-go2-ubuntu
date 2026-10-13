@@ -1,0 +1,7 @@
+{
+  "policies": {
+    "Preferences": {
+      "media.av1.enabled": { "Value": false, "Status": "default" }
+    }
+  }
+}

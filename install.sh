@@ -15,6 +15,8 @@
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #             (works on any Ubuntu 24.04 GNOME machine, not just the Surface)
 #   sms       Chatty (texting over the SIM)
+#   tracker   usage-tracker: records which apps use the CPU, GPU, RAM and battery, in the
+#             background, so you can see what to trim (any machine)
 #
 # Options (environment variables):
 #   APN=giffgaff.com APN_USER=giffgaff APN_PASS=password APN_NAME=giffgaff ./install.sh lte
@@ -30,19 +32,20 @@ grep -q 'VERSION_ID="24.04"' /etc/os-release || warn "written for Ubuntu 24.04; 
 
 modules=("$@")
 [[ ${#modules[@]} -gt 0 ]] || modules=(system cameras lte desktop)
-[[ ${modules[*]} == all ]] && modules=(system cameras lte desktop rice)
+[[ ${modules[*]} == all ]] && modules=(system cameras lte desktop rice tracker)
 
 for m in "${modules[@]}"; do
   [[ -f $REPO/modules/$m.sh ]] || die "unknown module '$m' (see ./install.sh --help)"
 done
 
-# The rice is plain GNOME and runs on any machine; the other modules are for the Go 2's hardware.
+# The rice and the tracker run on any machine; the other modules are for the Go 2's hardware.
 product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
-if [[ $product != "Surface Go 2" && -z ${FORCE:-} && ${modules[*]} != rice ]]; then
-  die "this is a '$product', not a Surface Go 2; only the rice is for any machine: ./install.sh rice (FORCE=1 runs the rest anyway)"
+hardware=$(printf '%s\n' "${modules[@]}" | grep -vxE 'rice|tracker' || true)
+if [[ $product != "Surface Go 2" && -z ${FORCE:-} && -n $hardware ]]; then
+  die "this is a '$product', not a Surface Go 2; only the rice and tracker are for any machine: ./install.sh rice tracker (FORCE=1 runs the rest anyway)"
 fi
 
-sudo -v   # ask for the password once, up front
+[[ ${modules[*]} == tracker ]] || sudo -v   # ask for the password once, up front
 for m in "${modules[@]}"; do
   . "$REPO/modules/$m.sh"
 done

@@ -1,0 +1,1380 @@
+#!/usr/bin/env python3
+"""usage-tracker: find out what is using your CPU, GPU, RAM and battery, down to the
+process and thread inside each app.
+
+  usage-tracker record              sample every 5 s until Ctrl-C (or --duration)
+  usage-tracker report              ranked summary of what was recorded
+  usage-tracker report --app firefox  everything about one app
+  usage-tracker live                top-like view, grouped by app
+  usage-tracker service install     keep recording in the background (systemd --user)
+
+Apps are told apart by their systemd cgroup (GNOME launches every app in its own
+scope), so all of an app's helper processes are counted together. Inside an app it
+records each process role (renderer, GPU process, Web Content, ...) and each thread
+name. Per sample it collects CPU time, GPU time (DRM fdinfo), CPU wakeups, disk writes,
+CPU time of short-lived child processes (which top/htop never show), and every 2 min
+memory (PSS). Power comes from the battery while unplugged, and from RAPL when run as
+root. Standard library only; reads /proc and /sys.
+"""
+import argparse
+import glob
+import os
+import pwd
+import re
+import shutil
+import signal
+import socket
+import sqlite3
+import subprocess
+import sys
+import time
+from collections import defaultdict
+
+CLK = os.sysconf('SC_CLK_TCK')
+NCPU = os.cpu_count() or 1
+PF_KTHREAD = 0x00200000
+
+# The human user, also when run under sudo (for RAPL power readings).
+_pw = pwd.getpwuid(int(os.environ.get('SUDO_UID', os.getuid())))
+HOME, UID, GID = _pw.pw_dir, _pw.pw_uid, _pw.pw_gid
+DEFAULT_DB = os.path.join(HOME, '.local/share/usage-tracker/usage.db')
+
+
+def read(path, mode='r'):
+    # Raw os.read: about twice as fast as open() for the ~1000 tiny /proc files per sample.
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return None
+    try:
+        data = chunk = os.read(fd, 65536)
+        while len(chunk) > 2048:   # small proc/sysfs files arrive in one read
+            chunk = os.read(fd, 65536)
+            data += chunk
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    return data if mode == 'rb' else data.decode(errors='replace')
+
+
+def unescape(s):
+    """Undo systemd unit-name escaping (\\x2d -> -)."""
+    return re.sub(r'\\x([0-9a-fA-F]{2})', lambda m: chr(int(m.group(1), 16)), s)
+
+
+# ---------------------------------------------------------------- naming
+
+DESKTOP_DIRS = ['/usr/share/applications', '/usr/local/share/applications',
+                '/var/lib/snapd/desktop/applications',
+                '/var/lib/flatpak/exports/share/applications',
+                HOME + '/.local/share/flatpak/exports/share/applications',
+                HOME + '/.local/share/applications',
+                '/etc/xdg/autostart', HOME + '/.config/autostart']
+_desktop_names = None
+
+
+def desktop_name(app_id):
+    """Human name of an app from its .desktop file, e.g. com.anthropic.Claude -> Claude."""
+    global _desktop_names
+    if _desktop_names is None:
+        _desktop_names = {}
+        for d in DESKTOP_DIRS:
+            for path in sorted(glob.glob(d + '/*.desktop')):
+                stem = os.path.basename(path)[:-8].lower()
+                if stem in _desktop_names:
+                    continue
+                section = None
+                for line in (read(path) or '').splitlines():
+                    if line.startswith('['):
+                        section = line.strip()
+                    elif section == '[Desktop Entry]' and line.startswith('Name='):
+                        _desktop_names[stem] = line[5:].strip()
+                        break
+    return _desktop_names.get(app_id.lower())
+
+
+# Units that belong together, matched against the unescaped unit/app id.
+GROUPS = [
+    (r'org\.gnome\.Shell(@|$)|^gnome-shell', 'GNOME Shell'),
+    (r'org\.gnome\.SettingsDaemon\.', 'GNOME settings daemons'),
+    (r'^(pipewire|pipewire-pulse|wireplumber|filter-chain)$', 'PipeWire (audio/camera)'),
+    (r'^(evolution-|gnome-online-accounts|goa-)|Evolution-alarm', 'Evolution data server'),
+    (r'^gvfs-', 'GVfs (file-system helpers)'),
+    (r'^xdg-(desktop-portal|document-portal|permission-store)', 'XDG portals'),
+    (r'^(tracker-|localsearch)', 'File indexer (localsearch)'),
+    (r'^(at-spi|gnome-session|dbus)', 'Session plumbing (dbus, at-spi)'),
+    (r'IBus|^ibus', 'IBus input method'),
+    (r'^(gnome-keyring|gcr-ssh-agent)', 'Keyring'),
+]
+SCOPE_RE = re.compile(r'app-(?:(?:gnome|flatpak|kde|xfce|cinnamon|mate|sway|hyprland)-)?(.+)-[^-]+$')
+SERVICE_RE = re.compile(r'app-(?:(?:gnome|flatpak|kde|xfce|cinnamon|mate|sway|hyprland)-)?([^@]+)')
+SNAP_RE = re.compile(r'snap\.([^.]+)\.([^.]+?)(?:[.-][0-9a-f-]{36})?$')
+
+
+def app_display(app_id):
+    for pat, name in GROUPS:
+        if re.search(pat, app_id):
+            return name
+    name = desktop_name(app_id)
+    if name:
+        return name
+    if re.fullmatch(r'[\w-]+(\.[\w-]+){2,}', app_id):   # org.example.Thing -> Thing
+        return app_id.rsplit('.', 1)[1]
+    return app_id
+
+
+def classify(cgroup, kthread):
+    """Map a cgroup v2 path to the app it belongs to."""
+    if kthread:
+        return 'Kernel'
+    parts = [p for p in cgroup.split('/') if p]
+    if not parts:
+        return 'Other (root cgroup)'
+    for p in parts[:-1]:   # app-<id>.slice, e.g. app-org.gnome.Terminal.slice
+        m = re.fullmatch(r'app-(?:(?:gnome|flatpak|kde)-)?(.+)\.slice', p)
+        if m:
+            return app_display(unescape(m.group(1)))
+    leaf = parts[-1]
+    base, _, kind = leaf.rpartition('.')
+    if base.startswith('snap.'):
+        m = SNAP_RE.match(base)
+        if m:
+            snap, app = m.groups()
+            return desktop_name(f'{snap}_{app}') or desktop_name(snap) or snap
+    if kind == 'scope':
+        if base.startswith(('vte-spawn-', 'tmux-spawn-', 'kitty-', 'wezterm-')):
+            return 'Terminal sessions'
+        if re.fullmatch(r'session-\w+', base):
+            return 'Login session'
+        if base == 'init':
+            return 'systemd'
+        m = SCOPE_RE.fullmatch(base)
+        return app_display(unescape(m.group(1) if m else base))
+    if kind == 'service':
+        m = SERVICE_RE.match(base)
+        uid = unescape(m.group(1) if m else base)
+        for pat, name in GROUPS:
+            if re.search(pat, uid):
+                return name
+        if parts[0] == 'system.slice':
+            return 'system: ' + uid.split('@')[0]
+        return app_display(uid.split('@')[0])
+    return unescape(leaf)
+
+
+INTERP_RE = re.compile(r'(python[\d.]*|node|bash|sh|dash|zsh|fish|perl|ruby|gjs|java|lua[\d.]*|php)$')
+
+
+def kthread_role(comm):
+    m = re.match(r'kworker/[^-+]*[-+]?(.*)$', comm)
+    if m:
+        return 'kworker: ' + (m.group(1) or 'idle')
+    m = re.match(r'irq/\d+-(.*)', comm)
+    if m:
+        return 'irq: ' + m.group(1)
+    return re.sub(r'/\d+$', '', comm)
+
+
+def proc_role(pid, comm):
+    """What a process is within its app: renderer, GPU process, 'python3 foo.py', ..."""
+    raw = read(f'/proc/{pid}/cmdline', 'rb') or b''
+    argv = [a.decode(errors='replace') for a in raw.split(b'\0') if a]
+    if len(comm) == 15 and argv and os.path.basename(argv[0]).startswith(comm):
+        comm = os.path.basename(argv[0])   # undo the kernel's 15-character truncation
+    for a in argv[1:]:   # Chromium / Electron helpers
+        if a.startswith('--type='):
+            t = a[7:]
+            for x in argv:
+                if x.startswith('--utility-sub-type='):
+                    return 'utility: ' + x.split('=', 1)[1].split('.')[0]
+            if t == 'renderer' and '--extension-process' in argv:
+                return 'renderer (extension)'
+            return {'gpu-process': 'GPU process'}.get(t, t)
+    if INTERP_RE.match(comm) and len(argv) > 1:
+        args = iter(argv[1:])
+        for a in args:
+            if a in ('-m', '-c', '-e'):
+                return f'{comm} {a} {next(args, "").split()[0] if a == "-m" else ""}'.strip()
+            if not a.startswith('-'):
+                return f'{comm} {os.path.basename(a)}'
+    return comm
+
+
+def thread_label(name, is_main):
+    # Pools of numbered threads (pool-3, StyleThread#0) count as one.
+    return name + ' [main]' if is_main else re.sub(r'\d+$', 'N', name)
+
+
+# ---------------------------------------------------------------- sampling
+
+ENGINE_RE = re.compile(r'^drm-engine-[\w-]+:\s+(\d+)\s*ns', re.M)
+DRM_MEM_RE = re.compile(r'^drm-(resident|shared)-[\w-]+:\s+(\d+)\s*(\w*)', re.M)
+UNIT_KB = {'': 1 / 1024, 'KiB': 1, 'MiB': 1024, 'GiB': 1 << 20}
+CLIENT_RE = re.compile(r'^drm-client-id:\s+(\d+)', re.M)
+
+
+def drm_fds(pid):
+    d = f'/proc/{pid}/fd'
+    try:
+        fds = os.listdir(d)
+    except OSError:
+        return []
+    out = []
+    for fd in fds:
+        try:
+            if os.readlink(f'{d}/{fd}').startswith('/dev/dri/'):
+                out.append(fd)
+        except OSError:
+            pass
+    return out
+
+
+def read_mem(pid):
+    """(PSS kB, swap kB). PSS splits shared pages fairly between processes; for other
+    users' processes (no permission) fall back to RSS."""
+    s = read(f'/proc/{pid}/smaps_rollup')
+    if s:
+        pss = re.search(r'^Pss:\s+(\d+)', s, re.M)
+        swap = re.search(r'^SwapPss:\s+(\d+)', s, re.M)
+        if pss:
+            return int(pss.group(1)), int(swap.group(1)) if swap else 0
+    s = read(f'/proc/{pid}/status') or ''
+    rss = re.search(r'^VmRSS:\s+(\d+)', s, re.M)
+    swap = re.search(r'^VmSwap:\s+(\d+)', s, re.M)
+    return (int(rss.group(1)) if rss else 0), (int(swap.group(1)) if swap else 0)
+
+
+class Proc:
+    __slots__ = ('pid', 'ppid', 'comm', 'app', 'role', 'kthread', 'cpu', 'child', 'io',
+                 'threads', 'drm', 'drm_stale', 'new', 'busy', 'thread_scan')
+
+
+class SysReader:
+    """System-wide numbers: CPU busy/idle depth, wakeups, battery and RAPL power, brightness."""
+
+    def __init__(self):
+        self.deep = []   # cpuidle residency files for C6 and deeper (core powered off)
+        for st in glob.glob('/sys/devices/system/cpu/cpu[0-9]*/cpuidle/state[0-9]*'):
+            m = re.match(r'C(\d+)', read(st + '/name') or '')
+            if m and int(m.group(1)) >= 6:
+                self.deep.append(st + '/time')
+        self.freq = glob.glob('/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq')
+        self.bat, self.ac = None, []
+        for ps in sorted(glob.glob('/sys/class/power_supply/*')):
+            typ = (read(ps + '/type') or '').strip()
+            if typ == 'Battery' and (read(ps + '/scope') or '').strip() != 'Device' \
+                    and self.bat is None:
+                self.bat = ps
+            elif typ == 'Mains':
+                self.ac.append(ps)
+        self.rapl = {}
+        for d in glob.glob('/sys/class/powercap/intel-rapl:[0-9]*'):
+            name = (read(d + '/name') or '').strip()
+            key = {'package-0': 'pkg', 'psys': 'psys'}.get(name)
+            if key and read(d + '/energy_uj') is not None:
+                self.rapl[key] = (d + '/energy_uj', int(read(d + '/max_energy_range_uj') or 0))
+        self.zram = glob.glob('/sys/block/zram*/mm_stat')
+        bl = sorted(glob.glob('/sys/class/backlight/*'))
+        self.backlight = bl[0] if bl else None
+        self.prev = None
+
+    def _raw(self):
+        r = {}
+        stat = read('/proc/stat') or ''
+        for line in stat.splitlines():
+            f = line.split()
+            if f[0] == 'cpu':
+                v = [int(x) for x in f[1:9]]
+                r['cpu'] = v   # user nice system idle iowait irq softirq steal
+            elif f[0] == 'ctxt':
+                r['ctxt'] = int(f[1])
+            elif f[0] == 'intr':
+                r['intr'] = int(f[1])
+        r['deep'] = sum(int(read(p) or 0) for p in self.deep)
+        r['rapl'] = {k: int(read(p) or 0) for k, (p, _) in self.rapl.items()}
+        net_rx = net_tx = 0
+        for line in (read('/proc/net/dev') or '').splitlines()[2:]:
+            iface, _, rest = line.partition(':')
+            if iface.strip() != 'lo':
+                f = rest.split()
+                net_rx += int(f[0])
+                net_tx += int(f[8])
+        r['net'] = (net_rx, net_tx)
+        return r
+
+    def read(self, dt):
+        raw = self._raw()
+        prev, self.prev = self.prev, raw
+        if prev is None or not dt:
+            return None
+        d = [a - b for a, b in zip(raw['cpu'], prev['cpu'])]
+        total = sum(d) or 1
+        out = {
+            'busy': (total - d[3] - d[4]) / total,
+            'irq_s': (d[5] + d[6]) / CLK,
+            'iowait': d[4] / total,
+            'ctxt': (raw['ctxt'] - prev['ctxt']) / dt,
+            'intr': (raw['intr'] - prev['intr']) / dt,
+            'deep': min(1.0, (raw['deep'] - prev['deep']) / (dt * 1e6 * NCPU)) if self.deep else None,
+            'net_rx': raw['net'][0] - prev['net'][0],
+            'net_tx': raw['net'][1] - prev['net'][1],
+        }
+        freqs = [int(read(p) or 0) for p in self.freq]
+        out['freq'] = sum(freqs) / len(freqs) / 1000 if freqs else None
+        for k, (_, rng) in self.rapl.items():
+            e = raw['rapl'][k] - prev['rapl'][k]
+            if e < 0:
+                e += rng
+            out[k + '_w'] = e / 1e6 / dt
+        on_ac = any((read(p + '/online') or '0').strip() == '1' for p in self.ac)
+        out['on_batt'], out['bat_pct'], out['bat_w'] = int(not on_ac), None, None
+        if self.bat:
+            status = (read(self.bat + '/status') or '').strip()
+            cap = read(self.bat + '/capacity')
+            out['bat_pct'] = float(cap) if cap else None
+            if status == 'Discharging':
+                out['on_batt'] = 1
+                pw = read(self.bat + '/power_now')
+                if pw:
+                    out['bat_w'] = abs(int(pw)) / 1e6
+                else:
+                    cur, volt = read(self.bat + '/current_now'), read(self.bat + '/voltage_now')
+                    if cur and volt:
+                        out['bat_w'] = abs(int(cur)) * int(volt) / 1e12
+        if self.backlight:
+            b = read(self.backlight + '/actual_brightness') or read(self.backlight + '/brightness')
+            m = read(self.backlight + '/max_brightness')
+            out['bright'] = int(b) / int(m) if b and m and int(m) else None
+        mi = {k: int(v) for k, v in re.findall(r'^(\w+):\s+(\d+)', read('/proc/meminfo') or '', re.M)}
+        g = lambda *keys: sum(mi.get(k, 0) for k in keys)
+        out['mem_used'] = g('MemTotal') - g('MemAvailable')
+        out['swap_used'] = g('SwapTotal') - g('SwapFree')
+        # Where RAM goes (kB). Shmem holds graphics buffers on integrated GPUs, plus tmpfs and
+        # shared memory; zram's compressed pages live outside every meminfo category.
+        out['mem_total'], out['mem_free'] = g('MemTotal'), g('MemFree')
+        out['mem_anon'], out['mem_shmem'] = g('AnonPages'), g('Shmem')
+        out['mem_cache'] = g('Cached', 'Buffers', 'SReclaimable') - g('Shmem')
+        out['mem_kernel'] = g('SUnreclaim', 'KernelStack', 'PageTables', 'SecPageTables')
+        zram = [(read(f) or '').split() for f in self.zram]
+        out['mem_zram'] = sum(int(z[2]) for z in zram if len(z) > 2) // 1024 if zram else None
+        out['zram_orig'] = sum(int(z[0]) for z in zram if len(z) > 2) // 1024 if zram else None
+        return out
+
+
+class Sampler:
+    """Walks /proc each interval and turns cumulative counters into per-interval usage."""
+
+    def __init__(self, full_every=300, mem_every=120, drm_every=60, thread_every=30):
+        self.full_every, self.mem_every, self.drm_every = full_every, mem_every, drm_every
+        self.thread_every = thread_every
+        self.procs = {}          # (pid, starttime) -> Proc
+        self.drm_clients = {}    # DRM client id -> engine ns at last sample
+        self.sys = SysReader()
+        self.mono = self.up_ticks = None
+        self.last_full = self.last_mem = self.last_drm = 0.0
+
+    def _new_proc(self, pid, f, comm, kthread):
+        p = Proc()
+        p.pid, p.kthread, p.comm = pid, kthread, comm
+        p.app = classify(self._cgroup(pid), kthread)
+        p.role = kthread_role(comm) if kthread else proc_role(pid, comm)
+        p.threads = p.drm = p.io = None
+        p.drm_stale, p.busy, p.thread_scan = True, False, 0.0
+        return p
+
+    @staticmethod
+    def _cgroup(pid):
+        for line in (read(f'/proc/{pid}/cgroup') or '').splitlines():
+            if line.startswith('0::'):
+                return line[3:]
+        return ''
+
+    def _scan_threads(self, p, refresh_names):
+        """CPU ns and times-scheduled (≈ wakeups) per thread since the last scan.
+        Counters are cumulative, so a process that was idle in between loses nothing."""
+        base = f'/proc/{p.pid}/task'
+        try:
+            tids = os.listdir(base)
+        except OSError:
+            return 0, []
+        old, new, out, wake = p.threads, {}, [], 0
+        for tid in tids:
+            s = read(f'{base}/{tid}/schedstat')
+            if not s:
+                continue
+            ns, _, pc = s.split()
+            ns, pc = int(ns), int(pc)
+            t = old.get(tid) if old is not None else None
+            if t is None:
+                # Threads alive before recording started form the baseline; anything
+                # born later counts in full.
+                pre = old is None and not p.new
+                t = [ns if pre else 0, pc if pre else 0, None]
+            if t[2] is None or refresh_names:
+                t[2] = (read(f'{base}/{tid}/comm') or '?').strip()
+            dns, dpc = ns - t[0], pc - t[1]
+            t[0], t[1] = ns, pc
+            new[tid] = t
+            if dns > 0 or dpc > 0:
+                out.append((thread_label(t[2], tid == str(p.pid)), dns / 1e9, dpc))
+                wake += dpc
+        p.threads = new
+        return wake, out
+
+    def _read_io(self, p):
+        s = read(f'/proc/{p.pid}/io')
+        if not s:
+            return 0, 0
+        d = dict(re.findall(r'^(\w+): (\d+)', s, re.M))
+        cur = int(d.get('read_bytes', 0)), int(d.get('write_bytes', 0))
+        prev, p.io = p.io, cur
+        if prev is None:
+            return (0, 0) if not p.new else cur
+        return max(0, cur[0] - prev[0]), max(0, cur[1] - prev[1])
+
+    def _gpu(self, first, discover):
+        """GPU engine time per process since the last sample, from DRM fdinfo.
+        A client id can show up in several fds/processes; count it once."""
+        seen, out = {}, defaultdict(float)
+        for key, p in self.procs.items():
+            if p.kthread:
+                continue
+            if discover and (p.drm is None or p.drm_stale):
+                p.drm, p.drm_stale = drm_fds(p.pid), False
+            for fd in p.drm or ():
+                info = read(f'/proc/{p.pid}/fdinfo/{fd}')
+                m = CLIENT_RE.search(info or '')
+                if not m or m.group(1) in seen:
+                    continue
+                total = sum(int(x) for x in ENGINE_RE.findall(info))
+                seen[m.group(1)] = total
+                prev = self.drm_clients.get(m.group(1), total if first else 0)
+                out[key] += max(0, total - prev) / 1e9
+        self.drm_clients = seen
+        return out
+
+    def _gpu_mem(self):
+        """Graphics memory (kB) per process, counted once per DRM client. On integrated GPUs
+        this is ordinary RAM that PSS misses. Buffers shared with another client (a window's
+        contents handed to the compositor) count half to each side, like PSS."""
+        seen, out = set(), defaultdict(float)
+        for key, p in self.procs.items():
+            for fd in p.drm or ():
+                info = read(f'/proc/{p.pid}/fdinfo/{fd}')
+                m = CLIENT_RE.search(info or '')
+                if not m or m.group(1) in seen:
+                    continue
+                seen.add(m.group(1))
+                kb = {'resident': 0.0, 'shared': 0.0}
+                for kind, v, unit in DRM_MEM_RE.findall(info):
+                    kb[kind] += int(v) * UNIT_KB.get(unit, 1)
+                out[key] += max(0.0, kb['resident'] - kb['shared'] / 2)
+        return out
+
+    def sample(self):
+        """One pass over /proc. Returns None on the first (baseline) call, else
+        {'ts', 'dt', 'sys', 'procs': [...], 'threads': [...], 'mem': [...] or None}."""
+        mono, ts = time.monotonic(), time.time()
+        up_ticks = float((read('/proc/uptime') or '0').split()[0]) * CLK
+        first = self.mono is None
+        dt = None if first else mono - self.mono
+        full = first or mono - self.last_full >= self.full_every
+        discover = first or mono - self.last_drm >= self.drm_every
+        want_mem = not first and mono - self.last_mem >= self.mem_every
+        if full:
+            self.last_full = mono
+        if discover:
+            self.last_drm = mono
+        if want_mem:   # first memory snapshot comes with the first real sample
+            self.last_mem = mono
+
+        old, cur = self.procs, {}
+        deltas = {}
+        for name in os.listdir('/proc'):
+            if not name.isdigit():
+                continue
+            s = read(f'/proc/{name}/stat', 'rb')
+            if not s:
+                continue
+            r = s.rfind(b')')
+            comm = s[s.find(b'(') + 1:r].decode(errors='replace')
+            f = s[r + 2:].split()
+            pid, start = int(name), int(f[19])
+            cpu, child = int(f[11]) + int(f[12]), int(f[13]) + int(f[14])
+            key = (pid, start)
+            p = old.get(key)
+            if p is None:
+                kthread = bool(int(f[6]) & PF_KTHREAD)
+                p = self._new_proc(pid, f, comm, kthread)
+                # Born since the last sample: all of its CPU time is new.
+                p.new = not first and start >= self.up_ticks - CLK
+                p.cpu, p.child = (0, 0) if p.new else (cpu, child)
+            elif comm != p.comm:   # exec'd into something else, or a kworker changed jobs
+                p.comm = comm
+                p.role = kthread_role(comm) if p.kthread else proc_role(pid, comm)
+            p.ppid = int(f[1])
+            deltas[key] = (cpu - p.cpu, child - p.child)
+            p.cpu, p.child = cpu, child
+            cur[key] = p
+
+        # Children that exited were reaped into their parent's cutime. Subtract what we
+        # already saw of them; the rest is CPU of processes too short-lived to sample.
+        reaped = defaultdict(int)
+        for key, p in old.items():
+            if key not in cur:
+                reaped[p.ppid] += p.cpu + p.child
+        self.procs = cur
+
+        rows, threads = [], []
+        for key, p in cur.items():
+            dcpu, dchild = deltas[key]
+            unseen = max(0, dchild - reaped.get(p.pid, 0)) if dchild > 0 else 0
+            if full and not first:
+                p.app = classify(self._cgroup(p.pid), p.kthread)   # apps get moved into scopes
+            wake, rd, wr = 0, 0, 0
+            if dcpu > 0:
+                p.drm_stale = p.busy = True
+            # Thread counters are cumulative, so scanning a busy process's threads every
+            # thread_every seconds (instead of every sample) loses nothing but timing.
+            if full or (p.busy and (p.threads is None or mono - p.thread_scan >= self.thread_every)):
+                p.busy, p.thread_scan = False, mono
+                wake, th = self._scan_threads(p, full)
+                if not p.kthread:
+                    threads.extend((p.app, p.role, *t) for t in th)
+                    rd, wr = self._read_io(p)
+            if not first and (dcpu > 0 or unseen > 0 or wake or wr):
+                rows.append([p.app, p.role, p.pid, dcpu / CLK, unseen / CLK, 0.0, wake, rd, wr])
+
+        gpu = self._gpu(first, discover)
+        sysr = self.sys.read(dt)
+        self.mono, self.up_ticks = mono, up_ticks
+        if first:
+            return None
+        index = {r[2]: r for r in rows}
+        for key, g in gpu.items():
+            if g <= 0:
+                continue
+            r = index.get(key[0])
+            if r is None:
+                p = cur[key]
+                r = [p.app, p.role, p.pid, 0.0, 0.0, 0.0, 0, 0, 0]
+                rows.append(r)
+            r[5] += g
+        if sysr and sysr['irq_s'] > 0:
+            rows.append(['Kernel', 'interrupts (hardirq/softirq)', 0, sysr['irq_s'], 0.0, 0.0, 0, 0, 0])
+
+        mem = None
+        if want_mem:
+            acc = defaultdict(lambda: [0, 0, 0, 0])
+            gpu_mem = self._gpu_mem()
+            for key, p in cur.items():
+                if p.kthread:
+                    continue
+                pss, swap = read_mem(p.pid)
+                a = acc[(p.app, p.role)]
+                a[0] += pss
+                a[1] += swap
+                a[2] += 1
+                a[3] += int(gpu_mem.get(key, 0))
+            mem = [(app, role, *v) for (app, role), v in acc.items()]
+        return {'ts': ts, 'dt': dt, 'sys': sysr, 'procs': rows, 'threads': threads, 'mem': mem}
+
+
+# ---------------------------------------------------------------- storage
+
+SCHEMA = """
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+CREATE TABLE IF NOT EXISTS names(id INTEGER PRIMARY KEY, name TEXT UNIQUE);
+CREATE TABLE IF NOT EXISTS sessions(id INTEGER PRIMARY KEY, start REAL, end REAL,
+  interval REAL, host TEXT, root INTEGER);
+CREATE TABLE IF NOT EXISTS sys(ts REAL, dt REAL, busy REAL, iowait REAL, ctxt REAL,
+  intr REAL, freq REAL, deep REAL, on_batt INTEGER, bat_pct REAL, bat_w REAL, pkg_w REAL,
+  psys_w REAL, bright REAL, mem_used INTEGER, swap_used INTEGER, net_rx INTEGER,
+  net_tx INTEGER, mem_total INTEGER, mem_free INTEGER, mem_anon INTEGER, mem_shmem INTEGER,
+  mem_cache INTEGER, mem_kernel INTEGER, mem_zram INTEGER, zram_orig INTEGER);
+CREATE TABLE IF NOT EXISTS proc(ts REAL, app INTEGER, role INTEGER, pid INTEGER,
+  cpu REAL, child REAL, gpu REAL, wake INTEGER, rd INTEGER, wr INTEGER);
+CREATE TABLE IF NOT EXISTS thread(ts REAL, batt INTEGER, app INTEGER, role INTEGER,
+  name INTEGER, cpu REAL, wake INTEGER);
+CREATE TABLE IF NOT EXISTS mem(ts REAL, batt INTEGER, app INTEGER, role INTEGER,
+  pss INTEGER, swap INTEGER, n INTEGER, gpu INTEGER);
+CREATE INDEX IF NOT EXISTS sys_ts ON sys(ts);
+CREATE INDEX IF NOT EXISTS proc_ts ON proc(ts);
+CREATE INDEX IF NOT EXISTS proc_app ON proc(app, ts);
+CREATE INDEX IF NOT EXISTS thread_ts ON thread(ts);
+CREATE INDEX IF NOT EXISTS mem_ts ON mem(ts);
+"""
+SYS_COLS = ['busy', 'iowait', 'ctxt', 'intr', 'freq', 'deep', 'on_batt', 'bat_pct', 'bat_w',
+            'pkg_w', 'psys_w', 'bright', 'mem_used', 'swap_used', 'net_rx', 'net_tx',
+            'mem_total', 'mem_free', 'mem_anon', 'mem_shmem', 'mem_cache', 'mem_kernel', 'mem_zram',
+            'zram_orig']
+MEM_COLS = ['pss', 'swap', 'n', 'gpu']
+
+
+class Store:
+    def __init__(self, path):
+        d = os.path.dirname(os.path.abspath(path))
+        if not os.path.isdir(d):
+            os.makedirs(d)
+            os.chown(d, UID, GID)
+        self.path = path
+        self.con = sqlite3.connect(path)
+        self.con.executescript(SCHEMA)
+        for table, cols in (('sys', SYS_COLS), ('mem', MEM_COLS)):   # databases from older versions
+            have = {r[1] for r in self.con.execute(f'PRAGMA table_info({table})')}
+            for col in cols:
+                if col not in have:
+                    self.con.execute(f'ALTER TABLE {table} ADD COLUMN {col}')
+        self.con.commit()
+        self.ids = dict((n, i) for i, n in self.con.execute('SELECT id, name FROM names'))
+
+    def nid(self, name):
+        i = self.ids.get(name)
+        if i is None:
+            self.con.execute('INSERT OR IGNORE INTO names(name) VALUES (?)', (name,))
+            i = self.con.execute('SELECT id FROM names WHERE name=?', (name,)).fetchone()[0]
+            self.ids[name] = i
+        return i
+
+    def write(self, samples, thread_acc, batt):
+        n = self.nid
+        with self.con:
+            for s in samples:
+                sy = s['sys'] or {}
+                self.con.execute(f'INSERT INTO sys (ts, dt, {",".join(SYS_COLS)}) '
+                                 f'VALUES (?,?,{",".join("?" * len(SYS_COLS))})',
+                                 [s['ts'], s['dt']] + [sy.get(c) for c in SYS_COLS])
+                self.con.executemany('INSERT INTO proc VALUES (?,?,?,?,?,?,?,?,?,?)',
+                                     [(s['ts'], n(a), n(r), *rest) for a, r, *rest in s['procs']])
+                if s['mem']:
+                    b = int((s['sys'] or {}).get('on_batt') or 0)
+                    self.con.executemany(f'INSERT INTO mem (ts, batt, app, role, {",".join(MEM_COLS)}) '
+                                         f'VALUES (?,?,?,?,?,?,?,?)',
+                                         [(s['ts'], b, n(a), n(r), *v) for a, r, *v in s['mem']])
+            if thread_acc:
+                ts = time.time()
+                self.con.executemany('INSERT INTO thread VALUES (?,?,?,?,?,?,?)',
+                                     [(ts, batt, n(a), n(r), n(t), c, w)
+                                      for (a, r, t), (c, w) in thread_acc.items()])
+
+    def prune(self, keep_days):
+        cut = time.time() - keep_days * 86400
+        with self.con:
+            for t in ('sys', 'proc', 'thread', 'mem'):
+                self.con.execute(f'DELETE FROM {t} WHERE ts < ?', (cut,))
+
+
+def fix_owner(path):
+    """Under sudo, keep the database owned by the real user."""
+    if os.geteuid() == 0 and UID != 0:
+        for f in (path, path + '-wal', path + '-shm'):
+            if os.path.exists(f):
+                os.chown(f, UID, GID)
+
+
+# ---------------------------------------------------------------- record
+
+def parse_duration(s):
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)\s*([smhd]?)', s.strip().lower())
+    if not m:
+        raise argparse.ArgumentTypeError(f'bad duration {s!r} (use e.g. 90s, 30m, 2h)')
+    return float(m.group(1)) * {'': 1, 's': 1, 'm': 60, 'h': 3600, 'd': 86400}[m.group(2)]
+
+
+def cmd_record(args):
+    store = Store(args.db)
+    store.prune(args.keep_days)
+    sampler = Sampler()
+    cur = store.con.execute('INSERT INTO sessions(start, interval, host, root) VALUES (?,?,?,?)',
+                            (time.time(), args.interval, socket.gethostname(), int(os.geteuid() == 0)))
+    store.con.commit()
+    session = cur.lastrowid
+    fix_owner(args.db)
+    if not args.quiet:
+        extra = ' + RAPL CPU power' if sampler.sys.rapl else \
+            ' (run with sudo to also log CPU package power via RAPL)'
+        print(f'Recording every {args.interval:g}s to {args.db}{extra}.')
+        print('Stop with Ctrl-C, then run: usage-tracker report', flush=True)
+
+    def on_term(*_):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, on_term)
+    buf, thread_acc, batt = [], defaultdict(lambda: [0.0, 0]), 0
+    t0 = time.monotonic()
+    last_flush = last_prune = t0
+    next_t = t0
+    blocked = {signal.SIGINT, signal.SIGTERM}
+
+    def flush():
+        signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+        try:
+            store.write(buf, thread_acc, batt)
+            buf.clear()
+            thread_acc.clear()
+            store.con.execute('UPDATE sessions SET end=? WHERE id=?', (time.time(), session))
+            store.con.commit()
+        finally:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, blocked)
+
+    try:
+        while True:
+            r = sampler.sample()
+            if r:
+                buf.append(r)
+                batt = int((r['sys'] or {}).get('on_batt') or 0)
+                for app, role, tname, cpu, wake in r['threads']:
+                    a = thread_acc[(app, role, tname)]
+                    a[0] += cpu
+                    a[1] += wake
+            now = time.monotonic()
+            if now - last_flush >= args.flush:
+                flush()
+                last_flush = now
+            if now - last_prune >= 3600:
+                store.prune(args.keep_days)
+                last_prune = now
+            if args.duration and now - t0 >= args.duration:
+                break
+            next_t += args.interval
+            if next_t < now:   # fell behind (e.g. after suspend): don't try to catch up
+                next_t = now + args.interval
+            time.sleep(next_t - now)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        flush()
+        fix_owner(args.db)
+    if not args.quiet:
+        el = time.monotonic() - t0
+        t = os.times()
+        print(f'\nRecorded {el / 60:.1f} min. Recorder overhead: '
+              f'{100 * (t.user + t.system) / max(el, 1):.2f}% of one CPU core.')
+
+
+# ---------------------------------------------------------------- report
+
+def parse_when(s):
+    now = time.time()
+    s = s.strip().lower()
+    if s == 'all':
+        return 0.0
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)\s*([smhdw])', s)
+    if m:
+        return now - float(m.group(1)) * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}[m.group(2)]
+    lt = time.localtime(now)
+    midnight = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+    if s == 'today':
+        return midnight
+    if s == 'yesterday':
+        return midnight - 86400
+    for fmt in ('%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return time.mktime(time.strptime(s, fmt))
+        except ValueError:
+            pass
+    try:
+        t = time.strptime(s, '%H:%M')
+        return midnight + t.tm_hour * 3600 + t.tm_min * 60
+    except ValueError:
+        raise SystemExit(f'Cannot parse time {s!r}: use 2h, 30m, today, yesterday, 14:30, '
+                         f'"2026-10-13 14:30" or all')
+
+
+class Fmt:
+    def __init__(self):
+        self.color = sys.stdout.isatty() and os.environ.get('NO_COLOR') is None
+        self.width = shutil.get_terminal_size((120, 40)).columns
+
+    def b(self, s):
+        return f'\033[1m{s}\033[0m' if self.color else s
+
+    def dim(self, s):
+        return f'\033[2m{s}\033[0m' if self.color else s
+
+    def warn(self, s):
+        return f'\033[33m{s}\033[0m' if self.color else s
+
+
+def kb(n):
+    if n is None:
+        return '-'
+    for unit, size in (('GB', 1 << 20), ('MB', 1 << 10)):
+        if n >= size:
+            return f'{n / size:.1f} {unit}' if n < size * 100 else f'{n / size:.0f} {unit}'
+    return f'{n:.0f} kB'
+
+
+def mb(nbytes):
+    return kb(nbytes / 1024) if nbytes else '-'
+
+
+def pct(x, digits=1):
+    return '-' if x is None else f'{x:.{digits}f}%'
+
+
+def spark(values):
+    m = max((v for v in values if v is not None), default=0)
+    out = ''
+    for v in values:
+        if v is None:
+            out += ' '
+        elif m <= 0:
+            out += '▁'
+        else:
+            out += '▁▂▃▄▅▆▇█'[min(7, int(v / m * 7.999))]
+    return out
+
+
+def table_width(rows, headers, indent=' '):
+    widths = [max([len(str(h))] + [len(str(r[i])) for r in rows]) for i, h in enumerate(headers)]
+    return len(indent) + sum(widths) + 2 * (len(widths) - 1)
+
+
+def table(rows, headers, aligns, fmt, indent=' '):
+    widths = [max([len(str(h))] + [len(str(r[i])) for r in rows]) for i, h in enumerate(headers)]
+
+    def line(cells):
+        return indent + '  '.join(str(c).ljust(w) if a == 'l' else str(c).rjust(w)
+                                  for c, w, a in zip(cells, widths, aligns)).rstrip()
+    print(fmt.dim(line(headers)))
+    for r in rows:
+        print(line(r))
+
+
+def signed_kb(n):
+    if n is None:
+        return '-'
+    return ('+' if n >= 0 else '−') + kb(abs(n))
+
+
+def cmd_report(args):
+    if not os.path.exists(args.db):
+        raise SystemExit(f'No recording at {args.db}. Start one with: usage-tracker record')
+    con = sqlite3.connect(args.db)
+    fmt = Fmt()
+    names = dict(con.execute('SELECT id, name FROM names'))
+    t0 = parse_when(args.since)
+    t1 = parse_when(args.until) if args.until else time.time() + 1
+    S = [dict(zip(['ts', 'dt'] + SYS_COLS, r)) for r in con.execute(
+        f'SELECT ts, dt, {",".join(SYS_COLS)} FROM sys WHERE ts BETWEEN ? AND ? AND dt IS NOT NULL '
+        + ('AND on_batt=1 ' if args.battery else '') + 'ORDER BY ts', (t0, t1))]
+    if not S:
+        raise SystemExit('Nothing recorded in that time window'
+                         + (' while on battery' if args.battery else '') + '.')
+    T = sum(s['dt'] for s in S)
+    dt_at = {s['ts']: s['dt'] for s in S}
+    first_ts, last_ts = S[0]['ts'] - S[0]['dt'], S[-1]['ts']
+    span = max(last_ts - first_ts, 1.0)
+    tsf = (f'ts IN (SELECT ts FROM sys WHERE ts BETWEEN {t0} AND {t1} AND on_batt=1)'
+           if args.battery else f'ts BETWEEN {t0} AND {t1}')
+    otherf = f'ts BETWEEN {t0} AND {t1}' + (' AND batt=1' if args.battery else '')
+
+    # Power: battery drain while unplugged beats RAPL (it includes the screen, Wi-Fi,
+    # LTE...); psys is whole-platform RAPL, pkg is CPU+GPU only.
+    source = key = None
+    for k, label in (('bat_w', 'battery drain'), ('psys_w', 'platform power, RAPL psys'),
+                     ('pkg_w', 'CPU package power, RAPL')):
+        if sum(s['dt'] for s in S if s[k] is not None and (k != 'bat_w' or s['on_batt'])) >= 300:
+            source, key = label, k
+            break
+    power = {s['ts']: s[key] for s in S
+             if key and s[key] is not None and (key != 'bat_w' or s['on_batt'])}
+    floor = sorted(power.values())[int(len(power) * 0.05)] if power else None
+
+    # ---- gather per-app numbers
+    act = defaultdict(list)        # app -> [(ts, cpu s)]
+    per_ts = defaultdict(dict)     # ts -> app -> cpu+gpu s
+    peak = defaultdict(float)
+    for ts, app, c, g in con.execute(f'SELECT ts, app, SUM(cpu + child), SUM(gpu) FROM proc '
+                                     f'WHERE {tsf} GROUP BY ts, app'):
+        dt = dt_at.get(ts)
+        if dt:
+            act[app].append((ts, c))
+            per_ts[ts][app] = c + g
+            peak[app] = max(peak[app], c / dt * 100)
+    energy = defaultdict(float)    # Wh above the idle floor, split by CPU+GPU share
+    for ts, acts in per_ts.items():
+        tot = sum(acts.values())
+        if ts in power and tot > 0:
+            dyn = max(0.0, power[ts] - floor) * dt_at[ts] / 3600
+            for app, a in acts.items():
+                energy[app] += dyn * a / tot
+    total_energy = sum(energy.values())
+
+    apps = {}
+
+    def entry(i):
+        return apps.setdefault(i, dict(id=i, name=names[i], cpu=0.0, child=0.0, gpu=0.0, wake=0,
+                                       wr=0, energy=energy.get(i, 0.0), peak=peak.get(i, 0.0), mem=[]))
+    for app, cpu, child, gpu, wake, wr in con.execute(
+            f'SELECT app, SUM(cpu), SUM(child), SUM(gpu), SUM(wake), SUM(wr) FROM proc '
+            f'WHERE {tsf} GROUP BY app'):
+        entry(app).update(cpu=cpu + child, child=child, gpu=gpu, wake=wake, wr=wr)
+    mem_total = {}
+    # An app's RAM = its processes' PSS + their graphics buffers (system RAM on integrated GPUs).
+    for ts, app, pss, swap, n, gpu in con.execute(
+            f'SELECT ts, app, SUM(pss), SUM(swap), SUM(n), SUM(COALESCE(gpu, 0)) FROM mem '
+            f'WHERE {otherf} GROUP BY ts, app ORDER BY ts'):
+        entry(app)['mem'].append((ts, pss + gpu, swap, n, gpu))
+        mem_total[ts] = mem_total.get(ts, 0) + pss + gpu
+    for a in apps.values():
+        m = a['mem']
+        a['pss'] = sum(x[1] for x in m) / len(m) if m else 0
+        a['gfx'] = sum(x[4] for x in m) / len(m) if m else 0
+        a['pss_max'] = max((x[1] for x in m), default=0)
+        a['swap'] = sum(x[2] for x in m) / len(m) if m else 0
+        a['nproc'] = round(sum(x[3] for x in m) / len(m)) if m else 0
+        a['growth'] = m[-1][1] - m[0][1] if len(m) >= 3 else None
+        a['mem_span'] = m[-1][0] - m[0][0] if m else 0
+
+    sel = list(apps.values())
+    if args.app:
+        q = args.app.lower()
+        sel = [a for a in sel if q in a['name'].lower()]
+        if not sel:
+            raise SystemExit(f'No app matching {args.app!r}. Recorded apps: '
+                             + ', '.join(sorted(a['name'] for a in apps.values())))
+
+    # ---- header + system
+    fmt_t = lambda t: time.strftime('%a %d %b %H:%M', time.localtime(t))
+    on_b = [s for s in S if s['on_batt']]
+
+    def avg(k, rows=S):
+        v = [(s[k], s['dt']) for s in rows if s[k] is not None]
+        return sum(x * d for x, d in v) / sum(d for _, d in v) if v else None
+    print()
+    print(fmt.b(f'Usage report  {fmt_t(first_ts)} → {fmt_t(last_ts)}')
+          + fmt.dim(f'   ({T / 3600:.1f} h' if T >= 3600 else f'   ({T / 60:.0f} min')
+          + fmt.dim(' recorded' + (', on battery only' if args.battery else '') + ')'))
+    print()
+    print(fmt.b('System'))
+    lines = []
+    busy, deep = avg('busy'), avg('deep')
+    lines.append(f'CPU: busy {busy * 100:.1f}% of all {NCPU} threads on average'
+                 + (f', cores in deep sleep (C6+) {deep * 100:.0f}% of the time' if deep is not None else '')
+                 + f'; {avg("ctxt"):.0f} context switches/s, {avg("intr"):.0f} interrupts/s')
+    mu = [s['mem_used'] for s in S if s['mem_used'] is not None]
+    su = [s['swap_used'] for s in S if s['swap_used'] is not None]
+    if mu:
+        lines.append(f'Memory: {kb(sum(mu) / len(mu))} in use on average (max {kb(max(mu))}), '
+                     f'swap {kb(sum(su) / len(su))} (max {kb(max(su))})')
+    if power:
+        avg_w = sum(power[t] * dt_at[t] for t in power) / sum(dt_at[t] for t in power)
+        lines.append(f'Power ({source}): avg {avg_w:.2f} W; idle floor ≈ {floor:.2f} W '
+                     f'(screen + idle), so ≈ {max(0, avg_w - floor):.2f} W came from activity')
+        drain = [s for s in on_b if s['bat_pct'] is not None]
+        if key == 'bat_w' and len(drain) > 1:
+            used, hrs = drain[0]['bat_pct'] - drain[-1]['bat_pct'], (drain[-1]['ts'] - drain[0]['ts']) / 3600
+            if used > 0 and hrs > 0.2:
+                lines.append(f'Battery: {used:.0f}% used over {hrs:.1f} h → a full charge lasts '
+                             f'≈ {100 / (used / hrs):.1f} h at this rate')
+    else:
+        lines.append(fmt.dim('Power: no reading (plugged in the whole time and not run with sudo). '
+                             'Unplug, or record with sudo, for watts.'))
+    if on_b and avg('bright', on_b) is not None:
+        lines.append(f'On battery {sum(s["dt"] for s in on_b) / 3600:.1f} h, '
+                     f'screen brightness {avg("bright", on_b) * 100:.0f}% on average')
+    for l in lines:
+        print('  ' + l)
+
+    def idx(ts, nb):
+        return min(nb - 1, max(0, int((ts - first_ts) / span * nb)))
+    bdt_cache = {}
+
+    def cpu_line(a, nb):
+        if nb not in bdt_cache:
+            bdt = [0.0] * nb
+            for s in S:
+                bdt[idx(s['ts'], nb)] += s['dt']
+            bdt_cache[nb] = bdt
+        bdt, vals = bdt_cache[nb], [0.0] * nb
+        for ts, c in act[a['id']]:
+            vals[idx(ts, nb)] += c
+        return [None if bdt[j] == 0 else vals[j] / bdt[j] for j in range(nb)]
+
+    def mem_line(a, nb):
+        b = [[] for _ in range(nb)]
+        for ts, pss, *_ in a['mem']:
+            b[idx(ts, nb)].append(pss)
+        return [sum(v) / len(v) if v else None for v in b]
+
+    def print_with_timeline(rows, items, headers, aligns, line_fn, label):
+        nb = min(40, fmt.width - table_width(rows, headers) - 3)
+        if nb >= 10 and span > 600:
+            rows = [r + [spark(line_fn(a, nb))] for r, a in zip(rows, items)]
+            headers, aligns = headers + [label], aligns + 'l'
+        table(rows, headers, aligns, fmt)
+
+    # ---- busiest minutes: what was going on when the machine was working hardest
+    app_filter = f' AND app IN ({",".join(str(a["id"]) for a in sel)})' if args.app else ''
+    mdt = defaultdict(float)
+    for s in S:
+        mdt[int(s['ts'] // 60)] += s['dt']
+    per_min = defaultdict(lambda: defaultdict(float))
+    for m, app, role, c in con.execute(f'SELECT CAST(ts / 60 AS INTEGER), app, role, SUM(cpu + child) '
+                                       f'FROM proc WHERE {tsf}{app_filter} GROUP BY 1, 2, 3'):
+        per_min[m][(app, role)] += c
+    ranked_min = sorted(((sum(v.values()) / mdt[m], m) for m, v in per_min.items() if mdt.get(m, 0) >= 20),
+                        reverse=True)
+    chosen = []
+    for tot, m in ranked_min:
+        if tot < 0.15:
+            break
+        if all(abs(m - c) > 2 for _, c in chosen):
+            chosen.append((tot, m))
+        if len(chosen) == 5:
+            break
+    if chosen:
+        print()
+        print(fmt.b('Busiest minutes') + fmt.dim(f'   (CPU, where 100% = one core of {NCPU})'))
+        for tot, m in sorted(chosen, key=lambda x: x[1]):
+            top = sorted(per_min[m].items(), key=lambda kv: -kv[1])[:3]
+            parts = ', '.join(f'{names[a]} › {names[r]} {c / mdt[m] * 100:.0f}%' for (a, r), c in top)
+            print(f'  {time.strftime("%a %H:%M", time.localtime(m * 60))}  {tot * 100:4.0f}%  {parts}')
+
+    # ---- processing
+    if total_energy > 0:
+        proc_sorted = sorted(sel, key=lambda a: -a['energy'])
+    else:
+        proc_sorted = sorted(sel, key=lambda a: -(a['cpu'] + a['gpu']))
+    proc_sorted = [a for a in proc_sorted if a['cpu'] + a['gpu'] > 0]
+    all_act = sum(a['cpu'] + a['gpu'] for a in apps.values()) or 1
+    print()
+    print(fmt.b('Processing: apps ranked by ' + ('estimated energy' if total_energy > 0 else 'CPU + GPU time'))
+          + fmt.dim('   CPU/GPU are averages over the whole window'))
+    show = proc_sorted if args.app else proc_sorted[:args.top]
+    rows = []
+    for i, a in enumerate(show, 1):
+        share = (f'{a["energy"] / total_energy * 100:.0f}% {a["energy"]:.2f}Wh' if total_energy > 0
+                 else f'{(a["cpu"] + a["gpu"]) / all_act * 100:.0f}%')
+        rows.append([i, a['name'][:32], share, pct(a['cpu'] / T * 100), f'{a["peak"]:.0f}%',
+                     pct(a['gpu'] / T * 100), f'{a["wake"] / T:.0f}',
+                     mb(a['wr'] / T * 3600) + '/h' if a['wr'] else '-'])
+    print_with_timeline(rows, show, ['#', 'App', 'Energy' if total_energy > 0 else 'Share', 'CPU',
+                                     'peak', 'GPU', 'wake/s', 'Disk wr'], 'rllrrrrr', cpu_line, 'CPU over time')
+    if not args.app and len(proc_sorted) > len(show):
+        print(fmt.dim(f'  … {len(proc_sorted) - len(show)} more (--top N)'))
+    if total_energy > 0:
+        print(fmt.dim('  Energy = power above the idle floor, split between apps each interval by their '
+                      'CPU+GPU time (an estimate).'))
+    print(fmt.dim('  wake/s = times per second its threads were scheduled; high values keep the CPU '
+                  'out of deep sleep.'))
+
+    # ---- memory
+    mem_sorted = sorted((a for a in sel if a['pss']), key=lambda a: -a['pss'])
+    if mem_sorted:
+        print()
+        print(fmt.b('Memory: apps ranked by RAM')
+              + fmt.dim('   RAM = memory of its processes (PSS, shared pages split fairly) + its graphics buffers'))
+        show = mem_sorted if args.app else mem_sorted[:args.top]
+        rows = [[i, a['name'][:32], kb(a['pss']), kb(a['gfx']) if a['gfx'] >= 1024 else '-', kb(a['pss_max']),
+                 signed_kb(a['growth']), kb(a['swap']) if a['swap'] else '-', a['nproc'],
+                 pct(a['cpu'] / T * 100)]
+                for i, a in enumerate(show, 1)]
+        print_with_timeline(rows, show, ['#', 'App', 'RAM', 'of it gfx', 'max', 'change', 'in swap', 'procs',
+                                         'CPU'], 'rlrrrrrrr', mem_line, 'RAM over time')
+        if not args.app:
+            ram_breakdown(fmt, S, apps)
+
+    # ---- drill-down
+    hints = []
+    if args.app:
+        detail = proc_sorted + [a for a in mem_sorted if a not in proc_sorted]
+    else:
+        detail = []
+        for a in proc_sorted[:args.detail] + mem_sorted[:3]:
+            if a not in detail:
+                detail.append(a)
+    for a in detail:
+        drill(con, fmt, names, a, T, tsf, otherf, args, hints)
+
+    # ---- what stands out
+    for a in mem_sorted[:args.top]:
+        g = a['growth']
+        first = a['mem'][0][1] if a['mem'] else 0
+        if g and g > 150 * 1024 and g > 0.25 * first and a['mem_span'] >= 1800:
+            hints.append(f'{a["name"]} grew from {kb(first)} to {kb(a["mem"][-1][1])} over '
+                         f'{a["mem_span"] / 3600:.1f} h. Steady growth points to a leak or piling-up '
+                         f'tabs/caches; its breakdown shows which process grew.')
+    idle_hogs = [a for a in mem_sorted if a['pss'] > 200 * 1024 and a['cpu'] / T < 0.002
+                 and a['name'] not in ('GNOME Shell', 'Kernel')]
+    if idle_hogs:
+        hints.append('Holding RAM while almost idle: ' + ', '.join(f'{a["name"]} {kb(a["pss"])}'
+                                                                   for a in idle_hogs[:5])
+                     + '. Anything here you don\'t use is free memory if closed or disabled.')
+    if su and max(su) > 1 << 20:
+        hints.append(f'Swap reached {kb(max(su))}: the system ran short of RAM, which costs CPU '
+                     f'(compressing pages) and makes apps stall when they come back.')
+    if deep is not None and busy < 0.15 and deep < 0.6:
+        hints.append(f'Cores reached deep sleep only {deep * 100:.0f}% of the time although the CPU was '
+                     f'{busy * 100:.0f}% busy. Something keeps waking it; see the wake/s columns.')
+    if on_b and avg('bright', on_b) is not None and avg('bright', on_b) > 0.6:
+        hints.append(f'Screen brightness averaged {avg("bright", on_b) * 100:.0f}% on battery. On a tablet '
+                     f'the screen is usually the biggest single power draw.')
+    if hints:
+        print()
+        print(fmt.b('What stands out'))
+        for h in hints:
+            print('  • ' + h)
+    if not args.app:
+        print()
+        print(fmt.dim('  Everything about one app:  usage-tracker report --app NAME'))
+    print()
+
+
+def ram_breakdown(fmt, S, apps):
+    """Where all of the machine's RAM went, on average, from /proc/meminfo and zram."""
+    rows = [s for s in S if s.get('mem_anon') is not None]
+    if not rows:
+        return
+    avg = lambda k: sum((s[k] or 0) for s in rows) / len(rows)
+    total = avg('mem_total')
+    gfx = sorted((a for a in apps.values() if a.get('gfx', 0) >= 10 * 1024), key=lambda a: -a['gfx'])
+    gfx_total = sum(a['gfx'] for a in apps.values() if a.get('gfx'))
+    parts = [
+        ('Apps (private memory: heaps, JavaScript, caches)', avg('mem_anon'), ''),
+        ('Graphics buffers & shared memory', avg('mem_shmem'),
+         f'graphics ≈ {kb(gfx_total)}: ' + ', '.join(f'{a["name"]} {kb(a["gfx"])}' for a in gfx[:4])
+         if gfx_total else ''),
+        ('Compressed swap (zram)', avg('mem_zram'),
+         f'holds {kb(avg("zram_orig"))} of swapped-out memory' if avg('zram_orig') else ''),
+        ('Kernel (unreclaimable slab, page tables, stacks)', avg('mem_kernel'), ''),
+        ('File cache (handed back when apps need it)', avg('mem_cache'), ''),
+        ('Free', avg('mem_free'), ''),
+    ]
+    other = total - sum(v for _, v, _ in parts)
+    if other > 50 * 1024:
+        parts.append(('Other (drivers, vmalloc)', other, ''))
+    print()
+    print(fmt.b(f'Where the RAM goes') + fmt.dim(f'   average of {kb(total)}'))
+    w = max(len(p[0]) for p in parts)
+    for label, v, note in parts:
+        print(f'  {label:{w}s} {kb(v):>8s}  {v / total * 100:3.0f}%' + (fmt.dim('   ' + note) if note else ''))
+
+
+def drill(con, fmt, names, a, T, tsf, otherf, args, hints):
+    app_id, name = a['id'], a['name']
+    print()
+    print(fmt.b(f'── {name} ') + fmt.dim('─' * max(0, min(fmt.width, 100) - len(name) - 4)))
+    roles = {}
+
+    def role(r):
+        return roles.setdefault(r, dict(cpu=0.0, child=0.0, gpu=0.0, wake=0, wr=0, n=0, mem=[], gfx=[]))
+    for r, cpu, child, gpu, wake, wr, n in con.execute(
+            f'SELECT role, SUM(cpu), SUM(child), SUM(gpu), SUM(wake), SUM(wr), COUNT(DISTINCT pid) '
+            f'FROM proc WHERE app=? AND {tsf} GROUP BY role', (app_id,)):
+        role(r).update(cpu=cpu, child=child, gpu=gpu, wake=wake, wr=wr, n=n)
+    for ts, r, pss, n, gpu in con.execute(f'SELECT ts, role, SUM(pss), SUM(n), SUM(COALESCE(gpu, 0)) FROM mem '
+                                          f'WHERE app=? AND {otherf} GROUP BY ts, role ORDER BY ts', (app_id,)):
+        x = role(r)
+        x['mem'].append(pss + gpu)
+        x['gfx'].append(gpu)
+        x['n'] = max(x['n'], n)
+    order = sorted(roles.items(), key=lambda kv: -(kv[1]['cpu'] + kv[1]['child'] + kv[1]['gpu']
+                                                   + (sum(kv[1]['mem']) / len(kv[1]['mem']) / 1e6 if kv[1]['mem'] else 0)))
+    rows = []
+    for r, x in order:
+        m = x['mem']
+        label = names[r] + (f' ×{x["n"]}' if x['n'] > 1 else '')
+        rows.append([label[:44], pct(x['cpu'] / T * 100, 2), pct(x['gpu'] / T * 100, 2),
+                     f'{x["wake"] / T:.0f}', kb(sum(m) / len(m)) if m else '-',
+                     kb(sum(x['gfx']) / len(x['gfx'])) if x['gfx'] and max(x['gfx']) >= 1024 else '-',
+                     kb(max(m)) if m else '-', mb(x['wr'] / T * 3600) + '/h' if x['wr'] else '-'])
+        if x['child'] / T > 0.002:
+            rows.append(['  ↳ short-lived child processes', pct(x['child'] / T * 100, 2), '', '', '', '', '', ''])
+            if x['child'] / T > 0.01:
+                hints.append(f'{name}: "{names[r]}" keeps starting short-lived processes '
+                             f'({x["child"] / T * 100:.1f}% CPU on average), typical of a script polling '
+                             f'in a loop. Waiting for events, or polling less often, fixes it.')
+    limit = None if args.app else 6
+    if limit and len(rows) > limit:
+        rows = rows[:limit] + [[f'… {len(rows) - limit} more', '', '', '', '', '', '', '']]
+    print(fmt.dim('  By process'))
+    table(rows, ['Process', 'CPU', 'GPU', 'wake/s', 'RAM avg', 'of it gfx', 'RAM max', 'Disk wr'], 'lrrrrrrr',
+          fmt, indent='   ')
+
+    th = []
+    if name != 'Kernel':
+        th = con.execute(f'SELECT role, name, SUM(cpu), SUM(wake) FROM thread WHERE app=? AND {otherf} '
+                         f'GROUP BY role, name ORDER BY SUM(cpu) DESC LIMIT ?',
+                         (app_id, 15 if args.app else 6)).fetchall()
+        th = [t for t in th if t[2] / T >= 0.0005]
+        if th:
+            print(fmt.dim('  Busiest threads'))
+            table([[f'{names[r]} › {names[t]}'[:60], pct(c / T * 100, 2), f'{w / T:.0f}'] for r, t, c, w in th],
+                  ['Process › thread', 'CPU', 'wake/s'], 'lrr', fmt, indent='   ')
+        seen = {(r, t) for r, t, *_ in th}
+        wk = [w for w in con.execute(f'SELECT role, name, SUM(cpu), SUM(wake) FROM thread WHERE app=? AND '
+                                     f'{otherf} GROUP BY role, name ORDER BY SUM(wake) DESC LIMIT 3', (app_id,))
+              if (w[0], w[1]) not in seen and w[3] / T >= 20]
+        if wk:
+            print(fmt.dim('  Most frequent wakers'))
+            table([[f'{names[r]} › {names[t]}'[:60], pct(c / T * 100, 2), f'{w / T:.0f}'] for r, t, c, w in wk],
+                  ['Process › thread', 'CPU', 'wake/s'], 'lrr', fmt, indent='   ')
+
+    pids = con.execute(f'SELECT pid, role, SUM(cpu + child), SUM(gpu) FROM proc WHERE app=? AND {tsf} '
+                       f'AND pid > 0 GROUP BY pid, role ORDER BY 3 DESC LIMIT ?',
+                       (app_id, 10 if args.app else 3)).fetchall()
+    if args.app or len({r for _, r, *_ in pids}) < len(pids):   # several processes share a role
+        print(fmt.dim('  Busiest single processes'))
+        table([[p, names[r][:40], pct(c / T * 100, 2), pct(g / T * 100, 2)] for p, r, c, g in pids],
+              ['PID', 'Process', 'CPU', 'GPU'], 'rlrr', fmt, indent='   ')
+
+    rolenames = {names[r] for r in roles}
+    cpu_pct, gpu_pct, wake_s = a['cpu'] / T * 100, a['gpu'] / T * 100, a['wake'] / T
+    if rolenames & {'Isolated Web Co', 'Web Content', 'Isolated Servic'}:
+        hints.append(f'{name}: open about:processes to see which tab or extension lives in which PID '
+                     f'(CPU and memory per tab). Background tabs with timers or animations are the usual culprits.')
+    elif 'renderer' in rolenames:
+        hints.append(f'{name} is Chromium/Electron based: each "renderer" is a window, tab or web view. '
+                     f'In Chromium browsers Shift+Esc maps them to tabs.')
+    rdd = sum(x['cpu'] for r, x in roles.items() if names[r] == 'RDD Process') / T
+    if rdd > 0.03:
+        if any('dav1d' in names[t] for _, t, *_ in th):
+            hints.append(f'{name}: {rdd * 100:.0f}% CPU went to decoding AV1 video in software (dav1d). '
+                         f'Intel GPUs before 11th gen cannot decode AV1; set media.av1.enabled = false in '
+                         f'about:config so YouTube and most sites send VP9/H.264, which the GPU decodes.')
+        else:
+            hints.append(f'{name}: {rdd * 100:.0f}% CPU went to video decoding (RDD Process). Check '
+                         f'about:support → Media to see whether hardware decoding is active.')
+    if name == 'GNOME Shell' and (cpu_pct > 5 or gpu_pct > 10):
+        hints.append(f'GNOME Shell used {cpu_pct:.1f}% CPU / {gpu_pct:.1f}% GPU. It draws every frame of the '
+                     f'desktop, and extensions run inside it: blur, transparency and animations cost GPU. '
+                     f'Disable extensions one at a time and compare.')
+    if wake_s > 100 and cpu_pct < 3:
+        hints.append(f'{name} woke the CPU ~{wake_s:.0f} times/s while using only {cpu_pct:.1f}% CPU. '
+                     f'Frequent timers or polling stop cores from reaching deep sleep.')
+
+
+# ---------------------------------------------------------------- live
+
+def cmd_live(args):
+    sampler = Sampler(full_every=60, mem_every=10, drm_every=10, thread_every=0)
+    fmt = Fmt()
+    mem = {}
+    try:
+        while True:
+            r = sampler.sample()
+            if r:
+                if r['mem']:
+                    mem = defaultdict(int)
+                    for app, role, pss, swap, n, gpu in r['mem']:
+                        mem[app] += pss + gpu
+                apps = defaultdict(lambda: [0.0, 0.0, 0, defaultdict(float)])
+                for app, role, pid, cpu, child, gpu, wake, rd, wr in r['procs']:
+                    a = apps[app]
+                    a[0] += cpu + child
+                    a[1] += gpu
+                    a[2] += wake
+                    a[3][role] += cpu + child + gpu
+                dt, sy = r['dt'], r['sys'] or {}
+                rows = []
+                for app, (cpu, gpu, wake, roles) in sorted(apps.items(), key=lambda x: -(x[1][0] + x[1][1]))[:args.top]:
+                    top = max(roles.items(), key=lambda x: x[1])[0] if roles else ''
+                    rows.append([app[:30], pct(cpu / dt * 100), pct(gpu / dt * 100), f'{wake / dt:.0f}',
+                                 kb(mem.get(app)), top[:30]])
+                out = '\033[H\033[J' if fmt.color else ''
+                sys.stdout.write(out)
+                pw = []
+                if sy.get('bat_w') is not None and sy.get('on_batt'):
+                    pw.append(f'battery {sy["bat_w"]:.2f} W')
+                for k, lbl in (('psys_w', 'platform'), ('pkg_w', 'CPU pkg')):
+                    if sy.get(k) is not None:
+                        pw.append(f'{lbl} {sy[k]:.2f} W')
+                print(fmt.b(time.strftime('%H:%M:%S')) + '  '
+                      + '  '.join(pw + [f'CPU {sy.get("busy", 0) * 100:.0f}%',
+                                        f'deep sleep {sy["deep"] * 100:.0f}%' if sy.get('deep') is not None else '',
+                                        f'{sy.get("ctxt", 0):.0f} ctx/s']))
+                print()
+                table(rows, ['App', 'CPU', 'GPU', 'wake/s', 'Mem', 'busiest part'], 'lrrrrl', fmt)
+                print(fmt.dim('\n100% CPU = one core. Ctrl-C to quit.'), flush=True)
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print()
+
+
+# ---------------------------------------------------------------- service
+
+UNIT = os.path.join(HOME, '.config/systemd/user/usage-tracker.service')
+
+
+def cmd_service(args):
+    sc = ['systemctl', '--user']
+    if args.action == 'install':
+        exe = os.path.realpath(__file__)
+        os.makedirs(os.path.dirname(UNIT), exist_ok=True)
+        with open(UNIT, 'w') as f:
+            f.write(f"""[Unit]
+Description=usage-tracker: per-app CPU/GPU/memory/wakeup recorder
+
+[Service]
+ExecStart={sys.executable} {exe} --db {args.db} record --quiet --interval {args.interval:g} --keep-days {args.keep_days:g}
+Nice=10
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+""")
+        subprocess.run(sc + ['daemon-reload'], check=True)
+        subprocess.run(sc + ['enable', 'usage-tracker.service'], check=True)
+        subprocess.run(sc + ['restart', 'usage-tracker.service'], check=True)   # picks up a new version
+        print(f'Recording in the background every {args.interval:g}s (keeps {args.keep_days:g} days).')
+        print('See results any time with: usage-tracker report')
+    elif args.action == 'uninstall':
+        subprocess.run(sc + ['disable', '--now', 'usage-tracker.service'])
+        if os.path.exists(UNIT):
+            os.remove(UNIT)
+        subprocess.run(sc + ['daemon-reload'])
+        print(f'Service removed. Recorded data is still in {args.db}.')
+    else:
+        subprocess.run(sc + ['status', '--no-pager', 'usage-tracker.service'])
+
+
+# ---------------------------------------------------------------- main
+
+def main():
+    ap = argparse.ArgumentParser(prog='usage-tracker', description=__doc__.split('\n\n')[0],
+                                 formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 epilog=__doc__.split('\n\n', 1)[1])
+    ap.add_argument('--db', default=DEFAULT_DB, help=f'database file (default {DEFAULT_DB})')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+
+    p = sub.add_parser('record', help='record usage until Ctrl-C')
+    p.add_argument('-i', '--interval', type=float, default=5, help='seconds between samples (default 5)')
+    p.add_argument('-d', '--duration', type=parse_duration, help='stop after e.g. 30m, 2h')
+    p.add_argument('--flush', type=float, default=60, help='seconds between database writes (default 60)')
+    p.add_argument('--keep-days', type=float, default=14, help='delete data older than this (default 14)')
+    p.add_argument('-q', '--quiet', action='store_true')
+    p.set_defaults(func=cmd_record)
+
+    p = sub.add_parser('report', help='show what used the most CPU, RAM and energy')
+    p.add_argument('-s', '--since', default='24h', help='2h, 30m, today, yesterday, 14:30, all (default 24h)')
+    p.add_argument('-u', '--until', help='end of the window (same formats)')
+    p.add_argument('-a', '--app', help='only this app (name substring), with full detail')
+    p.add_argument('-b', '--battery', action='store_true', help='only count time spent on battery')
+    p.add_argument('-n', '--top', type=int, default=15, help='apps in the main table (default 15)')
+    p.add_argument('--detail', type=int, default=5, help='apps to break down (default 5)')
+    p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser('live', help='live view grouped by app')
+    p.add_argument('-i', '--interval', type=float, default=2)
+    p.add_argument('-n', '--top', type=int, default=20)
+    p.set_defaults(func=cmd_live)
+
+    p = sub.add_parser('service', help='run the recorder in the background (systemd --user)')
+    p.add_argument('action', choices=['install', 'uninstall', 'status'])
+    p.add_argument('-i', '--interval', type=float, default=10, help='seconds between samples (default 10)')
+    p.add_argument('--keep-days', type=float, default=14)
+    p.set_defaults(func=cmd_service)
+
+    args = ap.parse_args()
+    if args.cmd == 'service' and os.geteuid() == 0:
+        raise SystemExit('Run "service" as your normal user, not with sudo.')
+    args.func(args)
+
+
+if __name__ == '__main__':
+    main()

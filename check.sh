@@ -24,6 +24,7 @@ t "cloud-init removed"               bash -c "! dpkg -s cloud-init"
 t "NetworkManager-wait-online off"   bash -c "! systemctl is-enabled -q NetworkManager-wait-online"
 t "no boot splash"                   bash -c "! grep -qE '^GRUB_CMDLINE_LINUX_DEFAULT=.*\bsplash\b' /etc/default/grub"
 t "VA-API H.264 decode"              bash -c "vainfo 2>/dev/null | grep -q VAProfileH264"
+t "Firefox: AV1 off (GPU decodes VP9)" grep -q '"media.av1.enabled"' /etc/firefox/policies/policies.json
 
 step "Cameras"
 t "libcamera + PipeWire plugin installed" dpkg -s libcamera-tools pipewire-libcamera
@@ -73,6 +74,11 @@ if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "Rice Style enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q rice-style@electro"
   t "Effects auto-switch running"    systemctl --user is-active rice-effects-auto.service
   t "window effects: glitch in, incinerate out" bash -c "grep -q glitch-enable-effect=true ~/.config/burn-my-windows/profiles/*1.conf && grep -q incinerate-enable-effect=true ~/.config/burn-my-windows/profiles/*2.conf"
+fi
+
+if [[ -x ~/.local/bin/usage-tracker ]]; then
+  step "Tracker"
+  t "usage-tracker recording"        systemctl --user is-active usage-tracker.service
 fi
 
 step "Result: $pass passed, $fail failed"

@@ -15,11 +15,13 @@ On the fresh install, connected to Wi-Fi, open a terminal and paste:
 wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash
 ```
 
-It downloads the repo to `~/surface-go2-ubuntu` and installs everything: the fixes and the rice.
+It downloads the repo to `~/surface-go2-ubuntu` and installs everything: the fixes, the rice and
+the usage tracker.
 Then reboot, and run `~/surface-go2-ubuntu/check.sh` to see what's working.
 
 **On any other computer** (Ubuntu 24.04 with the standard GNOME desktop), the same line installs
-just the rice, as the other fixes are for the Surface's hardware.
+just the rice, as the other fixes are for the Surface's hardware (`bash -s -- rice tracker` adds
+the tracker).
 
 To choose the modules, put them after `bash -s --` (here: the fixes without the rice):
 
@@ -53,6 +55,7 @@ sudo reboot
 | | cloud-init and NetworkManager-wait-online slow down boot | purges cloud-init, disables wait-online |
 | | boot splash | drops `splash` from the GRUB command line |
 | | | installs `vainfo` + `intel-media-va-driver` and checks hardware video decode |
+| | the GPU can't decode AV1, YouTube's preferred codec, so Firefox decodes it on the CPU (~30% of a core while a video plays) | Firefox policy default `media.av1.enabled = false`: sites send VP9, which the GPU decodes. `about:config` can turn it back on |
 | `cameras` | the kernel finds the cameras but apps can't use them | libcamera, PipeWire libcamera plugin, `uncalibrated.yaml` tuning symlinks for ov5693/ov8865, `video` group |
 | | **rear and front cameras freeze after 1 frame** when an app picks 720p/480p or switches resolution (`ipu3-cio2 payload length` / `frame sync error`) | DKMS package `surface-go2-cameras` with both sensor drivers patched to program the mode on every stream start. Rebuilds itself on kernel updates |
 | `lte` | the modem ignores MBIM, so there's no SIM | udev rule that makes `cdc_ncm` re-send the NTB size before ModemManager probes |
@@ -68,6 +71,10 @@ Optional modules:
 
 - `rice`: Catppuccin Mocha desktop (see below).
 - `sms`: Chatty ("Chats") for texting over the SIM. The modem can't do voice calls.
+- `tracker`: **usage-tracker** records, in the background, which apps (and which processes and
+  threads inside them) use the CPU, GPU, RAM and battery, so you can see what's worth trimming.
+  `usage-tracker report` shows the last 24 h; details in [files/tracker/README.md](files/tracker/README.md).
+  Included in `all` (so the one-line install sets it up); works on any machine.
 
 ## Options
 
@@ -114,6 +121,7 @@ files/lte/                 udev rule + system-sleep hook
 files/system/              zram, sysctl and journald config
 files/extensions/          Portrait Panel, Calendar Menu Fit, Power Button, Rice Style
 files/rice/                theme scripts, CSS, terminal profile, wallpaper generator
+files/tracker/             usage-tracker (one Python file, no dependencies) + its README
 ```
 
 ## Notes and gotchas

@@ -50,3 +50,10 @@ if vainfo 2>/dev/null | grep -q VAProfileH264; then
 else
   warn "vainfo shows no H.264 decode; check 'vainfo' output"
 fi
+
+step "System: Firefox video on the GPU, not the CPU"
+# The Go 2's GPU decodes H.264, VP9 and HEVC but not AV1, which YouTube prefers, so Firefox decoded
+# AV1 in software: ~30% of a CPU core while a video plays. With AV1 off, sites send VP9 instead.
+# Only a default: about:config can still turn it back on. Applies after Firefox restarts.
+sudo python3 -I "$FILES/system/firefox-policy.py" "$FILES/system/firefox-policies.json"
+ok "Firefox: AV1 off by default ($(grep -c av1 /etc/firefox/policies/policies.json) policy in /etc/firefox/policies)"
