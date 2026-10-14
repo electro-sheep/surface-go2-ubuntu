@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Surface Go 2 cameras that turn with the screen.
+
+Publishes "Front Camera" and "Back Camera" to PipeWire (through the small pw-camsrc helper),
+each turned to match how the tablet is held (iio-sensor-proxy's accelerometer). A camera is
+only switched on while an app is watching it. WirePlumber's own libcamera cameras are turned
+off (~/.config/wireplumber/main.lua.d/51-surface-rotate.lua), so apps only see these two.
+
+    surface-camera-rotate [--swap] [--size WxH]
+
+--swap  swap the two portrait directions if the picture ends up upside down in portrait.
+An app opening a camera gets a picture shaped like the screen (1280x720 or 720x1280). If the
+tablet turns while it's open, the picture still turns, fitted in the same shape with black bars,
+as apps can't take a shape change mid-stream.
+(GStreamer's pipewiresink can't offer a camera on PipeWire 1.0 and PipeWire can't negotiate
+with a v4l2loopback webcam, hence pw-camsrc.)
+"""
+import argparse
+import os
+import shutil
+import signal
+import subprocess
+import sys
+
+import gi
+gi.require_version("Gst", "1.0")
+from gi.repository import Gio, GLib, Gst  # noqa: E402
+
+FPS = 30
+# libcamera id, PipeWire node name, name shown in apps, sign of the turn. Turning the tablet
+# turns the two cameras' views in opposite directions, as they face opposite ways.
+CAMERAS = [
+    ("\\_SB_.PCI0.LNK1", "surface_front_camera", "Front Camera", +1),
+    ("\\_SB_.PCI0.LNK0", "surface_back_camera", "Back Camera", -1),
+]
+# iio-sensor-proxy orientation -> quarter turns clockwise for the front camera, which is also
+# videoflip's video-direction (0 none, 1 90° cw, 2 180°, 3 90° ccw)
+TURNS = {"normal": 0, "left-up": 1, "bottom-up": 2, "right-up": 3}
+
+loop = None
+
+
+class Camera:
+    all = []  # the IPU3 runs one camera at a time
+
+    def __init__(self, cam_id, node, label, sign, w, h, helper):
+        self.cam_id, self.node, self.label, self.sign, self.w, self.h = cam_id, node, label, sign, w, h
+        self.helper = helper
+        self.turns = 0
+        self.ow, self.oh = w, h  # the shape the app picked
+        self.pipeline = None
+        self.wanted = False      # an app is watching
+        self.ready = False       # pw-camsrc handles the shape signals
+        self.stop_timer = 0
+        self.retries = 0
+        Camera.all.append(self)
+        self.spawn()
+
+    def spawn(self):
+        self.ready = False
+        self.ow, self.oh = self.w, self.h
+        self.out = subprocess.Popen([self.helper, str(self.w), str(self.h), str(FPS), self.node, self.label],
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        GLib.io_add_watch(self.out.stdout.fileno(), GLib.IO_IN | GLib.IO_HUP, self.on_helper)
+        return False
+
+    def on_helper(self, fd, cond):
+        line = self.out.stdout.readline().decode().strip()
+        if not line:  # helper gone (its PipeWire node broke): put up a fresh one
+            print(f"{self.label}: pw-camsrc exited ({self.out.wait()}), restarting it", file=sys.stderr, flush=True)
+            self.wanted = False
+            self.cancel_stop()
+            self.stop()
+            self.out.stdin.close()
+            GLib.timeout_add(1000, self.spawn)
+            return False
+        if line == "ready":
+            self.ready = True
+            self.send_shape()
+        elif line.startswith("size "):
+            size = tuple(int(x) for x in line.split()[1:])
+            if size != (self.ow, self.oh):
+                self.ow, self.oh = size
+                if self.pipeline:  # still running from before a turn: make the new shape
+                    self.stop()
+        elif line == "start":
+            self.wanted, self.retries = True, 0
+            self.cancel_stop()
+            self.start()
+        elif line == "stop":
+            # apps often stop and restart a camera within a moment (switching, probing);
+            # wait a little before releasing the hardware
+            self.wanted = False
+            self.cancel_stop()
+            self.stop_timer = GLib.timeout_add(1500, self.delayed_stop)
+        return True
+
+    def cancel_stop(self):
+        if self.stop_timer:
+            GLib.source_remove(self.stop_timer)
+            self.stop_timer = 0
+
+    def delayed_stop(self):
+        self.stop_timer = 0
+        self.stop()
+        return False
+
+    def start(self):
+        if self.pipeline or not self.wanted:
+            return False
+        for other in Camera.all:  # switching cameras: free the hardware first
+            if other is not self and other.pipeline:
+                other.cancel_stop()
+                other.stop()
+        self.pipeline = Gst.parse_launch(
+            "libcamerasrc name=src ! video/x-raw,width=1280,height=720 ! videoconvert "
+            "! videoflip name=flip "
+            # scale to fit the fixed output with black bars, keeping the aspect ratio
+            f"! videoscale add-borders=true ! video/x-raw,width={self.ow},height={self.oh},pixel-aspect-ratio=1/1 "
+            "! videoconvert ! video/x-raw,format=YUY2 "
+            f"! fdsink fd={self.out.stdin.fileno()} sync=false"
+        )
+        self.pipeline.get_by_name("src").set_property("camera-name", self.cam_id)
+        # set before playing: videoscale can't follow a size change mid-stream (garbage)
+        self.pipeline.get_by_name("flip").set_property("video-direction", (self.sign * self.turns) % 4)
+        bus = self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message::error", self.on_error)
+        self.pipeline.set_state(Gst.State.PLAYING)
+        print(f"{self.label}: on", flush=True)
+        return False
+
+    def stop(self):
+        if not self.pipeline:
+            return
+        self.pipeline.set_state(Gst.State.NULL)  # releases the camera
+        self.pipeline = None
+        print(f"{self.label}: off", flush=True)
+
+    def on_error(self, _bus, msg):
+        err, _ = msg.parse_error()
+        print(f"{self.label}: {err.message}", file=sys.stderr, flush=True)
+        GLib.idle_add(self.retry)
+
+    def retry(self):
+        self.stop()
+        if self.wanted and self.retries < 5:  # e.g. the other camera was still letting go
+            self.retries += 1
+            GLib.timeout_add(500, self.start)
+        return False
+
+    def set_turns(self, turns):
+        if turns != self.turns:
+            self.turns = turns
+            if self.pipeline:  # rebuild with the new turn (a fraction of a second)
+                self.stop()
+                self.start()
+        self.send_shape()
+
+    def send_shape(self):
+        # the next app to open the camera gets the screen's shape
+        if self.ready:
+            self.out.send_signal(signal.SIGUSR1 if self.turns % 2 else signal.SIGUSR2)
+
+
+def main():
+    global loop
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--swap", action="store_true", help="swap the two portrait rotations")
+    ap.add_argument("--size", default="1280x720", help="output size, WxH (default 1280x720)")
+    args = ap.parse_args()
+    w, h = (int(x) for x in args.size.lower().split("x"))
+    turns_for = dict(TURNS)
+    if args.swap:
+        turns_for["left-up"], turns_for["right-up"] = turns_for["right-up"], turns_for["left-up"]
+
+    Gst.init(None)
+    loop = GLib.MainLoop()
+    helper = shutil.which("pw-camsrc") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "pw-camsrc")
+    cams = [Camera(*c, w, h, helper) for c in CAMERAS]
+
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    proxy = Gio.DBusProxy.new_sync(bus, 0, None, "net.hadess.SensorProxy",
+                                   "/net/hadess/SensorProxy", "net.hadess.SensorProxy")
+    proxy.call_sync("ClaimAccelerometer", None, 0, -1, None)
+
+    last = [None]
+
+    fake = os.environ.get("SURFACE_ROTATE_FAKE")  # testing: read the orientation from a file
+
+    def check_orientation():
+        # Ask the sensor directly: its change signals didn't reach this process.
+        try:
+            if fake:
+                o = open(fake).read().strip()
+            else:
+                o = bus.call_sync("net.hadess.SensorProxy", "/net/hadess/SensorProxy",
+                                  "org.freedesktop.DBus.Properties", "Get",
+                                  GLib.Variant("(ss)", ("net.hadess.SensorProxy", "AccelerometerOrientation")),
+                                  GLib.VariantType("(v)"), 0, 1000, None).unpack()[0]
+        except (GLib.Error, OSError):
+            return True
+        if o in turns_for and o != last[0]:  # "undefined" (lying flat): keep the last one
+            last[0] = o
+            for c in cams:
+                c.set_turns(turns_for[o])
+            print(f"orientation {o}", flush=True)
+        return True
+
+    check_orientation()
+    GLib.timeout_add(400, check_orientation)
+
+    for s in (signal.SIGINT, signal.SIGTERM):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, s, loop.quit)
+    print("Front Camera and Back Camera ready; each switches on when an app uses it", flush=True)
+    try:
+        loop.run()
+    finally:
+        for c in cams:
+            c.stop()
+            c.out.terminate()
+        try:
+            proxy.call_sync("ReleaseAccelerometer", None, 0, -1, None)
+        except GLib.Error:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

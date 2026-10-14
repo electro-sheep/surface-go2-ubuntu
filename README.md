@@ -26,7 +26,7 @@ the tracker).
 To choose the modules, put them after `bash -s --` (here: the fixes without the rice):
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash -s -- system cameras lte desktop
+wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash -s -- system cameras rotate lte desktop
 ```
 
 Run it as your normal user, not with `sudo`. It asks for your password once. Running it again is
@@ -58,6 +58,7 @@ sudo reboot
 | | the GPU can't decode AV1, YouTube's preferred codec, so Firefox decodes it on the CPU (~30% of a core while a video plays) | Firefox policy default `media.av1.enabled = false`: sites send VP9, which the GPU decodes. `about:config` can turn it back on |
 | `cameras` | the kernel finds the cameras but apps can't use them | libcamera, PipeWire libcamera plugin, `uncalibrated.yaml` tuning symlinks for ov5693/ov8865, `video` group |
 | | **rear and front cameras freeze after 1 frame** when an app picks 720p/480p or switches resolution (`ipu3-cio2 payload length` / `frame sync error`) | DKMS package `surface-go2-cameras` with both sensor drivers patched to program the mode on every stream start. Rebuilds itself on kernel updates |
+| `rotate` | the camera picture doesn't turn with the screen: in portrait apps show it sideways, as no Linux camera app reads the accelerometer | `surface-camera-rotate` turns each picture to match the screen and offers it as **Front Camera** / **Back Camera** (WirePlumber's unturned cameras are hidden). Apps get a portrait-shaped picture in portrait; turning mid-call turns the picture inside the shape the app opened with. A camera only switches on while an app uses it. `pw-camsrc` (small C helper) publishes the frames, as GStreamer's `pipewiresink` and a v4l2loopback webcam both fail on PipeWire 1.0 |
 | `lte` | the modem ignores MBIM, so there's no SIM | udev rule that makes `cdc_ncm` re-send the NTB size before ModemManager probes |
 | | SIM disappears after suspend | `system-sleep` hook that does the same on resume |
 | | modem is mapped to the empty eSIM | maps it to the physical SIM slot (`mbimcli --ms-set-device-slot-mappings=0`) |
@@ -117,6 +118,7 @@ install.sh                 entry point
 check.sh                   health check (./check.sh --quick skips camera captures)
 modules/*.sh               one file per module
 files/dkms/                patched ov5693/ov8865 sources + the .patch files + dkms.conf
+files/camera-rotate/       surface-camera-rotate (turns the cameras) + pw-camsrc.c (PipeWire camera helper)
 files/lte/                 udev rule + system-sleep hook
 files/system/              zram, sysctl and journald config
 files/extensions/          Portrait Panel, Calendar Menu Fit, Power Button, Rice Style
@@ -130,7 +132,9 @@ files/tracker/             usage-tracker (one Python file, no dependencies) + it
   out of the IPU3 camera graph until the next boot.
 - **The first frame from a sensor is garbage.** Capture ~10 frames and keep the last one.
 - **Don't set up a v4l2loopback bridge** unless an app really needs it. It holds the camera
-  exclusively and breaks PipeWire apps (Snapshot, Firefox, GNOME).
+  exclusively and breaks PipeWire apps (Snapshot, Firefox, GNOME). The `rotate` module needs none.
+- **Plain, unturned cameras back:** delete `~/.config/wireplumber/main.lua.d/51-surface-rotate.lua`,
+  then `systemctl --user disable --now surface-camera-bridge && systemctl --user restart wireplumber`.
 - **Kernel updates:** DKMS rebuilds the camera fix for every 7.0.x kernel. The sources are the
   v7.0 drivers, so `dkms.conf` only builds for `7.0.*`. When Ubuntu moves to a new kernel series,
   copy `drivers/media/i2c/ov8865.c` and `ov5693.c` from that kernel into `files/dkms/…/`, apply the
