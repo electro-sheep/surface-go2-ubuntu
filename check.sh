@@ -45,6 +45,12 @@ if [[ ${1:-} != --quick ]] && command -v cam >/dev/null; then
   t "no ipu3-cio2 errors since boot" bash -c "! journalctl -k -b -q 2>/dev/null | grep -iE 'ipu3-cio2.*(payload length|frame sync error)'"
 fi
 
+step "Camera rotation"
+t "pw-camsrc + surface-camera-rotate installed" test -x "$HOME/.local/bin/pw-camsrc" -a -x "$HOME/.local/bin/surface-camera-rotate"
+t "rotating cameras running"        systemctl --user is-active surface-camera-bridge
+t "apps see Front and Back Camera"  bash -c "pw-cli ls Node | grep -q surface_front_camera && pw-cli ls Node | grep -q surface_back_camera"
+t "unrotated cameras hidden"        test -f "$HOME/.config/wireplumber/main.lua.d/51-surface-rotate.lua"
+
 step "LTE"
 if lsusb -d 045e:09a5 >/dev/null 2>&1; then
   t "udev wake-up rule"              test -f /etc/udev/rules.d/78-surface-lte-fix.rules

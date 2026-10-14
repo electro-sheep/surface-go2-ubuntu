@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Surface Go 2 + Ubuntu 24.04 (stock HWE kernel) post-install fixes.
 #
-#   ./install.sh                 system + cameras + lte + desktop (the fixes)
+#   ./install.sh                 system + cameras + rotate + lte + desktop (the fixes)
 #   ./install.sh all             the fixes + the Catppuccin "rice" desktop theme
 #   ./install.sh <module>...     just the named modules, in the order given
 #
@@ -9,6 +9,7 @@
 #   system    apt cdrom source, installer policy-rc.d, zram (used readily), log cap, no cloud-init,
 #             no NetworkManager-wait-online, no boot splash, VA-API check
 #   cameras   libcamera userspace + IPA tuning symlinks + patched sensor drivers (DKMS)
+#   rotate    cameras that turn with the screen (apps see "Front Camera" / "Back Camera")
 #   lte       LTE modem wake-up fix (udev + resume hook), physical SIM slot, optional APN
 #   desktop   touch-friendly window snapping, Portrait Panel, Calendar Menu Fit, Power Button,
 #             GNOME Software
@@ -31,8 +32,8 @@ export REPO
 grep -q 'VERSION_ID="24.04"' /etc/os-release || warn "written for Ubuntu 24.04; this is $(. /etc/os-release; echo "$PRETTY_NAME")"
 
 modules=("$@")
-[[ ${#modules[@]} -gt 0 ]] || modules=(system cameras lte desktop)
-[[ ${modules[*]} == all ]] && modules=(system cameras lte desktop rice tracker)
+[[ ${#modules[@]} -gt 0 ]] || modules=(system cameras rotate lte desktop)
+[[ ${modules[*]} == all ]] && modules=(system cameras rotate lte desktop rice tracker)
 
 for m in "${modules[@]}"; do
   [[ -f $REPO/modules/$m.sh ]] || die "unknown module '$m' (see ./install.sh --help)"
