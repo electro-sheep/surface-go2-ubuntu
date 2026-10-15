@@ -52,11 +52,33 @@ fi
 # ask for the password once, up front (tracker and tweaks don't need it)
 needs_sudo=$(printf '%s\n' "${modules[@]}" | grep -vxE 'tracker|tweaks' || true)
 [[ -z $needs_sudo ]] || sudo -v
+# Each module runs in a subshell, so one that fails is reported and the rest still run.
+# (errtrace: the ERR trap also fires inside helper functions)
+failed=()
+flags=$(mktemp)
 for m in "${modules[@]}"; do
-  . "$REPO/modules/$m.sh"
+  set +e
+  (
+    set -eE
+    trap 'printf "\n%s✘ module %s stopped at line %s: %s%s\n" "$(c 31)" "$m" "$LINENO" "$BASH_COMMAND" "$(c 0)" >&2' ERR
+    . "$REPO/modules/$m.sh"
+    echo "$need_reboot $need_logout" >>"$flags"
+  )
+  (( $? == 0 )) || failed+=("$m")
+  set -e
 done
+while read -r r l; do
+  if (( r )); then need_reboot=1; fi
+  if (( l )); then need_logout=1; fi
+done <"$flags"
+rm -f "$flags"
 
 step "Done: ${modules[*]}"
 (( need_reboot )) && warn "REBOOT to load the camera drivers (don't hot-reload them: they drop out of the camera graph)."
 (( need_logout && ! need_reboot )) && warn "Log out and back in so GNOME loads the new extensions."
+if (( ${#failed[@]} )); then
+  warn "These didn't finish (see the ✘ lines above): ${failed[*]}"
+  info "Run them again with: ./install.sh ${failed[*]}"
+fi
 info "Run ./check.sh any time to see what's working."
+(( ${#failed[@]} == 0 ))

@@ -57,7 +57,8 @@ EOF
   gsettings set org.gnome.shell disabled-extensions "$dis"
   # Takes effect at once for extensions the running shell already knows about;
   # newly installed ones load at the next login.
-  if [[ $mode == add ]]; then gnome-extensions enable "$uuid" 2>/dev/null; else gnome-extensions disable "$uuid" 2>/dev/null; fi
+  # (fails for one that isn't installed, which is fine)
+  if [[ $mode == add ]]; then gnome-extensions enable "$uuid" 2>/dev/null || true; else gnome-extensions disable "$uuid" 2>/dev/null || true; fi
   return 0
 }
 
