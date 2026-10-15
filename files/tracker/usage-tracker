@@ -520,10 +520,15 @@ class Sampler:
 
         # Children that exited were reaped into their parent's cutime. Subtract what we
         # already saw of them; the rest is CPU of processes too short-lived to sample.
+        # If the parent exited too (Firefox quitting with its tabs), the child's time went
+        # into the parent's cutime and on up to whichever ancestor reaped it, so credit that.
+        gone = {p.pid: p for key, p in old.items() if key not in cur}
         reaped = defaultdict(int)
-        for key, p in old.items():
-            if key not in cur:
-                reaped[p.ppid] += p.cpu + p.child
+        for p in gone.values():
+            ppid, hops = p.ppid, 0
+            while ppid in gone and hops < 64:
+                ppid, hops = gone[ppid].ppid, hops + 1
+            reaped[ppid] += p.cpu + p.child
         self.procs = cur
 
         rows, threads = [], []
@@ -966,7 +971,12 @@ def cmd_report(args):
                      f'(screen + idle), so ≈ {max(0, avg_w - floor):.2f} W came from activity')
         drain = [s for s in on_b if s['bat_pct'] is not None]
         if key == 'bat_w' and len(drain) > 1:
-            used, hrs = drain[0]['bat_pct'] - drain[-1]['bat_pct'], (drain[-1]['ts'] - drain[0]['ts']) / 3600
+            # Only count back-to-back samples: a wall-clock gap longer than the sample's own
+            # interval means the machine was asleep or plugged in between.
+            used = hrs = 0
+            for a, b in zip(drain, drain[1:]):
+                if b['dt'] and b['ts'] - a['ts'] <= b['dt'] * 1.5 + 5:
+                    used, hrs = used + a['bat_pct'] - b['bat_pct'], hrs + (b['ts'] - a['ts']) / 3600
             if used > 0 and hrs > 0.2:
                 lines.append(f'Battery: {used:.0f}% used over {hrs:.1f} h → a full charge lasts '
                              f'≈ {100 / (used / hrs):.1f} h at this rate')
