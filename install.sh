@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Surface Go 2 + Ubuntu 24.04 (stock HWE kernel) post-install fixes.
 #
-#   ./install.sh                 system + cameras + rotate + lte + desktop (the fixes)
+#   ./install.sh                 system + cameras + rotate + lte + desktop + tweaks (the fixes)
 #   ./install.sh all             the fixes + the Catppuccin "rice" desktop theme
 #   ./install.sh <module>...     just the named modules, in the order given
 #
@@ -13,6 +13,9 @@
 #   lte       LTE modem wake-up fix (udev + resume hook), physical SIM slot, optional APN
 #   desktop   touch-friendly window snapping, Portrait Panel, Calendar Menu Fit, Power Button,
 #             GNOME Software
+#   tweaks    trims found with usage-tracker: Firefox user.js (no AV1, tabs saved every 60 s, no
+#             telemetry), adw-gtk3's GTK4 stylesheet off on GTK < 4.16 (journal spam), GNOME
+#             Software out of the Activities search (stays in RAM)
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #             (works on any Ubuntu 24.04 GNOME machine, not just the Surface)
 #   sms       Chatty (texting over the SIM)
@@ -32,8 +35,8 @@ export REPO
 grep -q 'VERSION_ID="24.04"' /etc/os-release || warn "written for Ubuntu 24.04; this is $(. /etc/os-release; echo "$PRETTY_NAME")"
 
 modules=("$@")
-[[ ${#modules[@]} -gt 0 ]] || modules=(system cameras rotate lte desktop)
-[[ ${modules[*]} == all ]] && modules=(system cameras rotate lte desktop rice tracker)
+[[ ${#modules[@]} -gt 0 ]] || modules=(system cameras rotate lte desktop tweaks)
+[[ ${modules[*]} == all ]] && modules=(system cameras rotate lte desktop tweaks rice tracker)
 
 for m in "${modules[@]}"; do
   [[ -f $REPO/modules/$m.sh ]] || die "unknown module '$m' (see ./install.sh --help)"
@@ -46,7 +49,9 @@ if [[ $product != "Surface Go 2" && -z ${FORCE:-} && -n $hardware ]]; then
   die "this is a '$product', not a Surface Go 2; only the rice and tracker are for any machine: ./install.sh rice tracker (FORCE=1 runs the rest anyway)"
 fi
 
-[[ ${modules[*]} == tracker ]] || sudo -v   # ask for the password once, up front
+# ask for the password once, up front (tracker and tweaks don't need it)
+needs_sudo=$(printf '%s\n' "${modules[@]}" | grep -vxE 'tracker|tweaks' || true)
+[[ -z $needs_sudo ]] || sudo -v
 for m in "${modules[@]}"; do
   . "$REPO/modules/$m.sh"
 done

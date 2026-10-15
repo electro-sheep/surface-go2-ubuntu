@@ -82,6 +82,13 @@ if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "window effects: glitch in, incinerate out" bash -c "grep -q glitch-enable-effect=true ~/.config/burn-my-windows/profiles/*1.conf && grep -q incinerate-enable-effect=true ~/.config/burn-my-windows/profiles/*2.conf"
 fi
 
+step "Tweaks"
+t "Firefox user.js: no AV1, tabs saved every 60 s, no telemetry" \
+                                     python3 -I "$FILES/tweaks/firefox-userjs.py" check "$FILES/tweaks/firefox-user.js"
+t "adw-gtk3 GTK4 stylesheet off (GTK4 < 4.16 can't read it)" test -z "$(adw_gtk3_gtk4_unreadable)"
+t "GNOME Software out of the Activities search" \
+                                     bash -c "gsettings get org.gnome.desktop.search-providers disabled | grep -q \"'org.gnome.Software.desktop'\""
+
 if [[ -x ~/.local/bin/usage-tracker ]]; then
   step "Tracker"
   t "usage-tracker recording"        systemctl --user is-active usage-tracker.service

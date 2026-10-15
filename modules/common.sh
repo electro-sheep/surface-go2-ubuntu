@@ -87,5 +87,25 @@ ext_install_local() {
   ok "installed $uuid"
 }
 
+# Recent adw-gtk3 releases ship a GTK4 stylesheet (gtk-4.0/libadwaita.css) built on CSS custom
+# properties, which GTK reads only from 4.16. On older GTK (24.04 has 4.14) every GTK4 app (Files,
+# Snapshot, the portal, even mutter's X11 window frames) logs ~960 "Theme parser error" lines at
+# start. Without it they use GTK's built-in Adwaita look, which adw-gtk3 copies anyway.
+adw_gtk3_gtk4_unreadable() {  # prints the adw-gtk3 gtk-4.0 folders this GTK can't read
+  local v
+  v=$(dpkg-query -W -f '${Version}' libgtk-4-1 2>/dev/null) || return 0
+  dpkg --compare-versions "$v" lt 4.16 || return 0
+  compgen -G "$HOME/.local/share/themes/adw-gtk3*/gtk-4.0" || true
+}
+adw_gtk3_gtk4_off() {
+  local d
+  while read -r d; do
+    [[ -n $d ]] || continue
+    rm -rf "$d.disabled"
+    mv "$d" "$d.disabled"
+    ok "set aside ${d/#$HOME/\~} (GTK4 older than 4.16 can't read it)"
+  done < <(adw_gtk3_gtk4_unreadable)
+}
+
 need_logout=0
 need_reboot=0

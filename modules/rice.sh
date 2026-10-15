@@ -26,6 +26,7 @@ if [[ ! -d ~/.local/share/themes/adw-gtk3-dark ]]; then
   mkdir -p ~/.local/share/themes
   curl -fsSL "$url" | tar -xJ -C ~/.local/share/themes
 fi
+adw_gtk3_gtk4_off   # its GTK4 part needs GTK 4.16+ (see modules/common.sh)
 ok "$(ls ~/.local/share/themes | tr '\n' ' ')"
 
 step "Rice: Papirus-Dark-Mauve icons (violet folders, user-level copy)"

@@ -26,7 +26,7 @@ the tracker).
 To choose the modules, put them after `bash -s --` (here: the fixes without the rice):
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash -s -- system cameras rotate lte desktop
+wget -qO- https://raw.githubusercontent.com/electro-sheep/surface-go2-ubuntu/main/bootstrap.sh | bash -s -- system cameras rotate lte desktop tweaks
 ```
 
 Run it as your normal user, not with `sudo`. It asks for your password once. Running it again is
@@ -67,6 +67,9 @@ sudo reboot
 | | in portrait, the clock's calendar drop-down (~670px) is wider than the screen (640px) and hangs off the left | **Calendar Menu Fit** extension: narrows its notification column to 300px |
 | | in portrait, the top-bar icons are cramped and run into the bar's rounded edge; apps open at landscape sizes | **Portrait Panel** extension: in portrait only, hides the 4G icon, gives the icons one even gap and opens new app windows maximised (on a portrait screen only, so an external monitor behaves normally) |
 | | the power button always suspends, so music stops and Bluetooth headphones disconnect | **Power Button** extension: with music playing it locks and turns the screen off and the music keeps going, with Power Saver held until you unlock (the lock also unloads most extensions); 5 minutes after the music stops it suspends. With nothing playing it suspends (not Ubuntu's power-off menu), and with the screen off it just wakes it |
+| `tweaks` | Firefox decodes AV1 on the CPU, saves the open tabs every 15 s and wakes the CPU for telemetry (`glean.dispatcher` was the most frequent waker the usage tracker saw) | `user.js` in the default Firefox profile: AV1 off, tabs saved every 60 s, telemetry and studies off. It goes in a marked block at the top of `user.js`, so your own lines stay; set a pref again below the block to override it. Applies when Firefox next starts |
+| | adw-gtk3 (from the rice) ships a GTK4 stylesheet that needs GTK 4.16; with 24.04's GTK 4.14 every GTK4 app logs ~960 `Theme parser error` lines to the journal at start | renames the theme's `gtk-4.0` folder to `gtk-4.0.disabled` while GTK4 is older than 4.16 (the `rice` module does this too). GTK4 apps fall back to GTK's own Adwaita look, which adw-gtk3 copies anyway |
+| | typing in the Activities search starts GNOME Software as a search provider, and it then stays in memory (~250–310 MB) | takes GNOME Software out of the search providers (`org.gnome.desktop.search-providers disabled`); installed apps still show up in the search |
 
 Optional modules:
 
@@ -120,7 +123,8 @@ modules/*.sh               one file per module
 files/dkms/                patched ov5693/ov8865 sources + the .patch files + dkms.conf
 files/camera-rotate/       surface-camera-rotate (turns the cameras) + pw-camsrc.c (PipeWire camera helper)
 files/lte/                 udev rule + system-sleep hook
-files/system/              zram, sysctl and journald config
+files/system/              zram, sysctl and journald config, Firefox policy
+files/tweaks/              Firefox user.js prefs + the script that merges them into the profile
 files/extensions/          Portrait Panel, Calendar Menu Fit, Power Button, Rice Style
 files/rice/                theme scripts, CSS, terminal profile, wallpaper generator
 files/tracker/             usage-tracker (one Python file, no dependencies) + its README
@@ -128,6 +132,9 @@ files/tracker/             usage-tracker (one Python file, no dependencies) + it
 
 ## Notes and gotchas
 
+- **Firefox needs a profile for `tweaks`.** On a fresh install Firefox hasn't made one yet, so the
+  step is skipped with a warning (AV1 is still off through the `system` module's policy). Open
+  Firefox once, close it and run `./install.sh tweaks` again; `./check.sh` shows ✘ until then.
 - **Reboot after the camera module.** Don't `rmmod`/`modprobe` the sensor drivers live: they drop
   out of the IPU3 camera graph until the next boot.
 - **The first frame from a sensor is garbage.** Capture ~10 frames and keep the last one.
