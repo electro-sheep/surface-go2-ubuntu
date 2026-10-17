@@ -1,6 +1,6 @@
-# Surface Go 2 on Ubuntu 24.04
+# Surface Go 2 on Ubuntu 26.04
 
-Fixes for a fresh Ubuntu 24.04 install on a Microsoft Surface Go 2, on the **stock Ubuntu HWE kernel
+Fixes for a fresh Ubuntu 26.04 install on a Microsoft Surface Go 2, on the **stock Ubuntu HWE kernel
 (7.0)**, with no linux-surface kernel needed. Run one script after installing Ubuntu and you get working front
 and rear cameras, LTE that survives suspend, a lighter system and touch-friendly window snapping.
 There's also an optional Catppuccin desktop theme ("rice").
@@ -19,7 +19,7 @@ It downloads the repo to `~/surface-go2-ubuntu` and installs everything: the fix
 the usage tracker.
 Then reboot, and run `~/surface-go2-ubuntu/check.sh` to see what's working.
 
-**On any other computer** (Ubuntu 24.04 with the standard GNOME desktop), the same line installs
+**On any other computer** (Ubuntu 26.04 with the standard GNOME desktop), the same line installs
 just the rice, as the other fixes are for the Surface's hardware (`bash -s -- rice tracker` adds
 the tracker).
 

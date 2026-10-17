@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Surface Go 2 + Ubuntu 24.04 (stock HWE kernel) post-install fixes.
+# Surface Go 2 + Ubuntu 26.04 (stock HWE kernel) post-install fixes.
 #
 #   ./install.sh                 system + cameras + rotate + lte + desktop + tweaks (the fixes)
 #   ./install.sh all             the fixes + the Catppuccin "rice" desktop theme
@@ -17,7 +17,7 @@
 #             telemetry), adw-gtk3's GTK4 stylesheet off on GTK < 4.16 (journal spam), GNOME
 #             Software out of the Activities search (stays in RAM)
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
-#             (works on any Ubuntu 24.04 GNOME machine, not just the Surface)
+#             (works on any Ubuntu 26.04 GNOME machine, not just the Surface)
 #   sms       Chatty (texting over the SIM)
 #   tracker   usage-tracker: records which apps use the CPU, GPU, RAM and battery, in the
 #             background, so you can see what to trim (any machine)
@@ -32,7 +32,7 @@ export REPO
 . "$REPO/modules/common.sh"
 
 [[ $EUID -ne 0 ]] || die "run this as your normal user, not with sudo; it asks for your password when it needs it"
-grep -q 'VERSION_ID="24.04"' /etc/os-release || warn "written for Ubuntu 24.04; this is $(. /etc/os-release; echo "$PRETTY_NAME")"
+grep -q 'VERSION_ID="26.04"' /etc/os-release || warn "written for Ubuntu 26.04; this is $(. /etc/os-release; echo "$PRETTY_NAME")"
 
 modules=("$@")
 [[ ${#modules[@]} -gt 0 ]] || modules=(system cameras rotate lte desktop tweaks)
