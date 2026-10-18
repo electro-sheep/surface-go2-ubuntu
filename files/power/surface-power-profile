@@ -1,5 +1,10 @@
 #!/bin/sh
-# surface-go2-ubuntu power module: power-saver on battery, performance on AC.
+# surface-go2-ubuntu power module: charger -> performance profile, full turbo;
+# battery -> power-saver profile (EPP power) and no turbo (the m3 stays at or below its base clock).
 sleep 1
-if [ "$(cat /sys/class/power_supply/ACAD/online 2>/dev/null)" = 1 ]; then p=performance; else p=power-saver; fi
-powerprofilesctl set "$p"
+P=/sys/devices/system/cpu/intel_pstate
+if [ "$(cat /sys/class/power_supply/ACAD/online 2>/dev/null)" = 1 ]; then
+  powerprofilesctl set performance; echo 0 > $P/no_turbo
+else
+  powerprofilesctl set power-saver; echo 1 > $P/no_turbo
+fi

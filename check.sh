@@ -83,6 +83,8 @@ if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "window effects: glitch in, incinerate out" bash -c "grep -q glitch-enable-effect=true ~/.config/burn-my-windows/profiles/*1.conf && grep -q incinerate-enable-effect=true ~/.config/burn-my-windows/profiles/*2.conf"
 fi
 
+t "auto-rotate unlocked at login"      bash -c "test -f ~/.config/autostart/surface-autorotate.desktop && gsettings get org.gnome.settings-daemon.peripherals.touchscreen orientation-lock | grep -qx false"
+
 step "Tweaks"
 t "Firefox user.js: no AV1, tabs saved every 60 s, no telemetry" \
                                      python3 -I "$FILES/tweaks/firefox-userjs.py" check "$FILES/tweaks/firefox-user.js"
@@ -95,6 +97,7 @@ step "Power"
 t "PCI runtime PM on every device"   bash -c "! grep -qx on /sys/bus/pci/devices/*/power/control"
 t "PCIe ASPM powersupersave"         grep -q '\[powersupersave\]' /sys/module/pcie_aspm/parameters/policy
 t "power profile follows the charger" bash -c "[ \"\$(powerprofilesctl get)\" = \$( [ \$(cat /sys/class/power_supply/ACAD/online) = 1 ] && echo performance || echo power-saver) ]"
+t "turbo off on battery, on with the charger" bash -c "[ \$(cat /sys/devices/system/cpu/intel_pstate/no_turbo) != \$(cat /sys/class/power_supply/ACAD/online) ]"
 t "NMI watchdog off"                 bash -c "[ \$(cat /proc/sys/kernel/nmi_watchdog) = 0 ]"
 t "Wi-Fi power save on"              bash -c "iw dev wlp1s0 get power_save | grep -q on"
 t "LTE modem still awake (power/control=on)" bash -c "grep -l 09a5 /sys/bus/usb/devices/*/idProduct | xargs -I{} dirname {} | xargs -I{} cat {}/power/control | grep -qx on"

@@ -17,7 +17,7 @@
 #             telemetry), adw-gtk3's GTK4 stylesheet off on GTK < 4.16 (journal spam), GNOME
 #             Software out of the Activities search (stays in RAM)
 #   power     battery: PCI runtime PM, PCIe ASPM powersupersave, NMI watchdog off, writeback 15 s,
-#             power-saver profile on battery, performance on AC
+#             power-saver + no turbo on battery, performance + turbo on AC
 #             (USB untouched: the LTE modem stays awake)
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #             (works on any Ubuntu 26.04 GNOME machine, not just the Surface)

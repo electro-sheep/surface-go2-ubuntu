@@ -76,3 +76,10 @@ step "Desktop: Calendar Menu Fit (clock drop-down fits in portrait)"
 # notification column.
 ext_install_local calendar-menu-fit@electro
 ext_enable calendar-menu-fit@electro
+
+step "Desktop: auto-rotate on at every login"
+# The rotation lock survives reboots; a locked screen at boot is never what a tablet wants.
+mkdir -p ~/.config/autostart
+install -m644 "$FILES/desktop/surface-autorotate.desktop" ~/.config/autostart/surface-autorotate.desktop
+gsettings set org.gnome.settings-daemon.peripherals.touchscreen orientation-lock false
+ok "rotation unlocked now and at each login"
