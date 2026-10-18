@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Surface Go 2 + Ubuntu 26.04 (stock HWE kernel) post-install fixes.
 #
-#   ./install.sh                 system + cameras + rotate + lte + desktop + tweaks (the fixes)
+#   ./install.sh                 system + cameras + rotate + lte + desktop + tweaks + power (the fixes)
 #   ./install.sh all             the fixes + the Catppuccin "rice" desktop theme
 #   ./install.sh <module>...     just the named modules, in the order given
 #
@@ -16,6 +16,8 @@
 #   tweaks    trims found with usage-tracker: Firefox user.js (no AV1, tabs saved every 60 s, no
 #             telemetry), adw-gtk3's GTK4 stylesheet off on GTK < 4.16 (journal spam), GNOME
 #             Software out of the Activities search (stays in RAM)
+#   power     battery: PCI runtime PM, PCIe ASPM powersupersave, NMI watchdog off, writeback 15 s
+#             (USB untouched: the LTE modem stays awake)
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #             (works on any Ubuntu 26.04 GNOME machine, not just the Surface)
 #   sms       Chatty (texting over the SIM)
@@ -35,8 +37,8 @@ export REPO
 grep -q 'VERSION_ID="26.04"' /etc/os-release || warn "written for Ubuntu 26.04; this is $(. /etc/os-release; echo "$PRETTY_NAME")"
 
 modules=("$@")
-[[ ${#modules[@]} -gt 0 ]] || modules=(system cameras rotate lte desktop tweaks)
-[[ ${modules[*]} == all ]] && modules=(system cameras rotate lte desktop tweaks rice tracker)
+[[ ${#modules[@]} -gt 0 ]] || modules=(system cameras rotate lte desktop tweaks power)
+[[ ${modules[*]} == all ]] && modules=(system cameras rotate lte desktop tweaks power rice tracker)
 
 for m in "${modules[@]}"; do
   [[ -f $REPO/modules/$m.sh ]] || die "unknown module '$m' (see ./install.sh --help)"

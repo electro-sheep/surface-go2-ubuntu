@@ -91,6 +91,13 @@ t "adw-gtk3 GTK4 stylesheet off (GTK4 < 4.16 can't read it)" test -z "$(adw_gtk3
 t "GNOME Software out of the Activities search" \
                                      bash -c "gsettings get org.gnome.desktop.search-providers disabled | grep -q \"'org.gnome.Software.desktop'\""
 
+step "Power"
+t "PCI runtime PM on every device"   bash -c "! grep -qx on /sys/bus/pci/devices/*/power/control"
+t "PCIe ASPM powersupersave"         grep -q '\[powersupersave\]' /sys/module/pcie_aspm/parameters/policy
+t "NMI watchdog off"                 bash -c "[ \$(cat /proc/sys/kernel/nmi_watchdog) = 0 ]"
+t "Wi-Fi power save on"              bash -c "iw dev wlp1s0 get power_save | grep -q on"
+t "LTE modem still awake (power/control=on)" bash -c "grep -l 09a5 /sys/bus/usb/devices/*/idProduct | xargs -I{} dirname {} | xargs -I{} cat {}/power/control | grep -qx on"
+
 if [[ -x ~/.local/bin/usage-tracker ]]; then
   step "Tracker"
   t "usage-tracker recording"        systemctl --user is-active usage-tracker.service

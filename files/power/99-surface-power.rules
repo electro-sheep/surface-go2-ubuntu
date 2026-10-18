@@ -1,0 +1,3 @@
+# surface-go2-ubuntu power module: runtime PM for PCI devices (Wi-Fi, NVMe, ISH sat at "on").
+# USB is left alone: the LTE modem must stay power/control=on (see lte module).
+ACTION=="add|bind", SUBSYSTEM=="pci", TEST=="power/control", ATTR{power/control}="auto"
