@@ -156,3 +156,11 @@ files/tracker/             usage-tracker (one Python file, no dependencies) + it
 ## License
 
 GPL-2.0. The camera driver sources are from the Linux kernel (GPL-2.0).
+
+## Ubuntu 26.04 notes
+
+- **Touch layout** is the default rice: 40 px top bar, 56 px dock icons. For the original compact
+  sizes: `RICE_VARIANT=compact ./install.sh rice`.
+- **LTE (known issue):** on kernel 7.0 the modem answers MBIM but rejects every OPEN with `Failure`
+  (survives cold boot, USB re-plug, LPM off, MBIM CLOSE). `files/lte/diagnose.sh` and
+  `files/lte/mbim-close.py` reproduce it.

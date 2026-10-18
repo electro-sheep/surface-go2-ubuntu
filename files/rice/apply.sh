@@ -21,8 +21,13 @@ GREEN="['0.651', '0.890', '0.631']"
 YELLOW="['0.976', '0.886', '0.686']"
 
 # Sizes, scaled down from the notes for a 960x640 logical screen
-BAR_H=32; BAR_MARGIN=6; BAR_RADIUS=16; DOCK_ICON=44
-BAR_FONT='Inter Semi-Bold 14'; BAR_ICON=24
+# RICE_VARIANT=touch (default): finger-sized bar and dock for the 10" touchscreen.
+# RICE_VARIANT=compact: the original 24.04 sizes, more room for windows.
+if [[ ${RICE_VARIANT:-touch} == compact ]]; then
+  BAR_H=32; BAR_MARGIN=6; BAR_RADIUS=16; DOCK_ICON=44; BAR_FONT='Inter Semi-Bold 14'; BAR_ICON=24
+else
+  BAR_H=40; BAR_MARGIN=6; BAR_RADIUS=20; DOCK_ICON=56; BAR_FONT='Inter Semi-Bold 15'; BAR_ICON=28
+fi
 # Just Perfection pins the panel actor height in *physical* px (max 64), so it must be
 # BAR_H x the shell's UI scale or the bar gets clipped. Past 64 we hand the height to
 # Open Bar alone (0), which only takes effect after a fresh login.
@@ -108,7 +113,7 @@ gs "${OB[@]}" warning-color "$YELLOW"
 gs "${OB[@]}" success-color "$GREEN"
 gs "${OB[@]}" destruct-color "$RED"
 # dock picks up the bar's colours + hairline border
-gs "${OB[@]}" dashdock-style 'Bar'
+gs "${OB[@]}" dashdock-style 'Default'  # Rice Style draws the dock (one rounded layer)
 gs "${OB[@]}" dbgalpha 0.80
 gs "${OB[@]}" dbradius 20.0
 gs "${OB[@]}" disize "$DOCK_ICON"
@@ -145,7 +150,7 @@ gsettings set $D require-pressure-to-show true
 gsettings set $D pressure-threshold 60.0
 gsettings set $D show-delay 0.10
 gsettings set $D hide-delay 0.25
-gsettings set $D transparency-mode 'FIXED'
+gsettings set $D transparency-mode 'DEFAULT'
 gsettings set $D background-opacity 0.80
 gsettings set $D click-action 'minimize-or-previews'
 gsettings set $D scroll-action 'cycle-windows'

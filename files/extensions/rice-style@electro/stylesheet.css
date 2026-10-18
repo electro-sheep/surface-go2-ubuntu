@@ -15,9 +15,14 @@
     color: rgba(166, 173, 200, 0.9);
 }
 
-/* GNOME 50: the dock's outer containers kept square corners, so Open Bar's dock shadow showed
- * sharp edges around the rounded pill. Round every layer to Open Bar's dock radius (dbradius 20). */
-#dashtodockContainer, #dashtodockContainer #dash, #dashtodockContainer .dash-background,
-#dashtodockContainer #dashtodockDashContainer { border-radius: 20px; }
+/* Dock: drawn here as one rounded layer. Open Bar ("Bar" style) and dash-to-dock's FIXED
+ * transparency each painted their own background on GNOME 50, and the square one showed as a ghost
+ * rectangle around the pill; both are set to leave the dock alone (modules/rice.sh). */
 #dashtodockContainer, #dashtodockContainer #dash, #dashtodockContainer #dashtodockDashContainer,
-#dashtodockContainer #dashtodockBox, #dashtodockContainer .dash-item-container { box-shadow: none; background-color: transparent; border: none; }
+#dashtodockContainer #dashtodockBox { background-color: transparent; box-shadow: none; border: none; }
+#dashtodockContainer .dash-background {
+  background-color: rgba(30, 30, 46, 0.85);   /* Catppuccin Mocha base */
+  border: 1px solid rgba(203, 166, 247, 0.55); /* mauve hairline, as the top bar */
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
