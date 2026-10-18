@@ -277,6 +277,9 @@ class SysReader:
         self.zram = glob.glob('/sys/block/zram*/mm_stat')
         bl = sorted(glob.glob('/sys/class/backlight/*'))
         self.backlight = bl[0] if bl else None
+        tz = [os.path.dirname(f) + "/temp" for f in glob.glob("/sys/class/thermal/thermal_zone*/type")
+              if (read(f) or "").strip() == "x86_pkg_temp"]
+        self.pkg_temp = tz[0] if tz else None
         self.prev = None
 
     def _raw(self):
@@ -346,6 +349,16 @@ class SysReader:
             b = read(self.backlight + '/actual_brightness') or read(self.backlight + '/brightness')
             m = read(self.backlight + '/max_brightness')
             out['bright'] = int(b) / int(m) if b and m and int(m) else None
+        # power settings in force, so samples can be compared per CPU setting
+        st = read('/var/lib/power-profiles-daemon/state.ini') or ''
+        pm = re.search(r'^Profile=(\S+)', st, re.M)
+        out['profile'] = pm.group(1) if pm else None
+        nt = read('/sys/devices/system/cpu/intel_pstate/no_turbo')
+        out['no_turbo'] = int(nt) if nt and nt.strip().isdigit() else None
+        out['epp'] = (read('/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference') or '').strip() or None
+        if self.pkg_temp:
+            t = read(self.pkg_temp)
+            out['temp'] = int(t) / 1000 if t and t.strip().lstrip('-').isdigit() else None
         mi = {k: int(v) for k, v in re.findall(r'^(\w+):\s+(\d+)', read('/proc/meminfo') or '', re.M)}
         g = lambda *keys: sum(mi.get(k, 0) for k in keys)
         out['mem_used'] = g('MemTotal') - g('MemAvailable')
@@ -598,7 +611,8 @@ CREATE TABLE IF NOT EXISTS sys(ts REAL, dt REAL, busy REAL, iowait REAL, ctxt RE
   intr REAL, freq REAL, deep REAL, on_batt INTEGER, bat_pct REAL, bat_w REAL, pkg_w REAL,
   psys_w REAL, bright REAL, mem_used INTEGER, swap_used INTEGER, net_rx INTEGER,
   net_tx INTEGER, mem_total INTEGER, mem_free INTEGER, mem_anon INTEGER, mem_shmem INTEGER,
-  mem_cache INTEGER, mem_kernel INTEGER, mem_zram INTEGER, zram_orig INTEGER);
+  mem_cache INTEGER, mem_kernel INTEGER, mem_zram INTEGER, zram_orig INTEGER, profile TEXT,
+  no_turbo INTEGER, epp TEXT, temp REAL);
 CREATE TABLE IF NOT EXISTS proc(ts REAL, app INTEGER, role INTEGER, pid INTEGER,
   cpu REAL, child REAL, gpu REAL, wake INTEGER, rd INTEGER, wr INTEGER);
 CREATE TABLE IF NOT EXISTS thread(ts REAL, batt INTEGER, app INTEGER, role INTEGER,
@@ -614,7 +628,7 @@ CREATE INDEX IF NOT EXISTS mem_ts ON mem(ts);
 SYS_COLS = ['busy', 'iowait', 'ctxt', 'intr', 'freq', 'deep', 'on_batt', 'bat_pct', 'bat_w',
             'pkg_w', 'psys_w', 'bright', 'mem_used', 'swap_used', 'net_rx', 'net_tx',
             'mem_total', 'mem_free', 'mem_anon', 'mem_shmem', 'mem_cache', 'mem_kernel', 'mem_zram',
-            'zram_orig']
+            'zram_orig', 'profile', 'no_turbo', 'epp', 'temp']
 MEM_COLS = ['pss', 'swap', 'n', 'gpu']
 
 
@@ -1356,7 +1370,7 @@ def main():
     p.add_argument('-i', '--interval', type=float, default=5, help='seconds between samples (default 5)')
     p.add_argument('-d', '--duration', type=parse_duration, help='stop after e.g. 30m, 2h')
     p.add_argument('--flush', type=float, default=60, help='seconds between database writes (default 60)')
-    p.add_argument('--keep-days', type=float, default=14, help='delete data older than this (default 14)')
+    p.add_argument('--keep-days', type=float, default=60, help='delete data older than this (default 60)')
     p.add_argument('-q', '--quiet', action='store_true')
     p.set_defaults(func=cmd_record)
 
@@ -1377,7 +1391,7 @@ def main():
     p = sub.add_parser('service', help='run the recorder in the background (systemd --user)')
     p.add_argument('action', choices=['install', 'uninstall', 'status'])
     p.add_argument('-i', '--interval', type=float, default=10, help='seconds between samples (default 10)')
-    p.add_argument('--keep-days', type=float, default=14)
+    p.add_argument('--keep-days', type=float, default=60)
     p.set_defaults(func=cmd_service)
 
     args = ap.parse_args()

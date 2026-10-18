@@ -105,6 +105,7 @@ t "LTE modem still awake (power/control=on)" bash -c "grep -l 09a5 /sys/bus/usb/
 if [[ -x ~/.local/bin/usage-tracker ]]; then
   step "Tracker"
   t "usage-tracker recording"        systemctl --user is-active usage-tracker.service
+  t "usage-tracker logs the power profile, turbo, EPP and CPU temp" python3 -I -c "import sqlite3,os; c=sqlite3.connect(\"file:\"+os.path.expanduser(\"~/.local/share/usage-tracker/usage.db\")+\"?mode=ro\",uri=True); assert c.execute(\"select profile is not null and temp is not null from sys order by ts desc limit 1\").fetchone()[0]"
 fi
 
 step "Result: $pass passed, $fail failed"
