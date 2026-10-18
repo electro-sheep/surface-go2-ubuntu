@@ -24,5 +24,5 @@
   background-color: rgba(30, 30, 46, 0.85);   /* Catppuccin Mocha base */
   border: 1px solid rgba(203, 166, 247, 0.55); /* mauve hairline, as the top bar */
   border-radius: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: none;  /* St draws shadows square, ignoring border-radius: that was the ghost box */
 }
