@@ -64,10 +64,13 @@ EOF
 # Install an extension from extensions.gnome.org for the running GNOME Shell version.
 ext_install_ego() {
   local uuid=$1 url tmp
-  if [[ -f $EXT_DIR/$uuid/metadata.json ]]; then ok "$uuid already installed"; return 0; fi
+  if [[ -f $EXT_DIR/$uuid/metadata.json ]]; then ext_allow_shell "$uuid"; ok "$uuid already installed"; return 0; fi
+  # No build for this GNOME yet? Take the newest one and declare this version (checked at next login).
   url=$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=$uuid&shell_version=$SHELL_VERSION" \
         | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["download_url"])') \
-    || { warn "no $uuid build for GNOME $SHELL_VERSION on extensions.gnome.org"; return 1; }
+    || url=$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=$uuid" \
+        | python3 -I -c 'import json,sys; m=json.load(sys.stdin)["shell_version_map"]; print("/download-extension/%s.shell-extension.zip?version_tag=%d" % (sys.argv[1], max(v["pk"] for v in m.values())))' "$uuid") \
+    || { warn "no $uuid build on extensions.gnome.org"; return 1; }
   tmp=$(mktemp -d)
   curl -fsSL -o "$tmp/ext.zip" "https://extensions.gnome.org$url" || { rm -rf "$tmp"; warn "download of $uuid failed"; return 1; }
   gnome-extensions install --force "$tmp/ext.zip"
@@ -75,7 +78,17 @@ ext_install_ego() {
   if [[ -d $EXT_DIR/$uuid/schemas && ! -f $EXT_DIR/$uuid/schemas/gschemas.compiled ]]; then
     glib-compile-schemas "$EXT_DIR/$uuid/schemas"
   fi
+  ext_allow_shell "$uuid"
   ok "installed $uuid"
+}
+
+# Add the running GNOME version to an installed extension's shell-version list.
+ext_allow_shell() {
+  python3 -I - "$EXT_DIR/$1/metadata.json" "$SHELL_VERSION" <<'PY'
+import json, sys
+p, v = sys.argv[1:]; m = json.load(open(p))
+if v not in m["shell-version"]: m["shell-version"].append(v); json.dump(m, open(p, "w"), indent=2)
+PY
 }
 
 # Install one of this repo's own extensions (files/extensions/<uuid>).
