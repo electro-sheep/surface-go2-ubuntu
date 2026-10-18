@@ -1,0 +1,10 @@
+[Unit]
+Description=Surface Go 2 LTE modem: re-send NTB input size so it accepts MBIM OPEN
+Before=ModemManager.service
+
+[Service]
+Type=oneshot
+# wait for the renamed net device to settle, then toggle rx_max/tx_max and re-probe
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/lib/systemd/system-sleep/surface-lte-fix post
+ExecStartPost=-/bin/sh -c 'systemctl -q is-active ModemManager && systemctl restart ModemManager || true'

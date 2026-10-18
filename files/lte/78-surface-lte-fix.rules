@@ -1,6 +1,7 @@
-# Surface Go 2 LTE modem (Microsoft-branded Qualcomm X16): it ignores MBIM until cdc_ncm re-sends
-# SET_NTB_INPUT_SIZE. Changing rx_max/tx_max forces that before ModemManager probes the modem.
-ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="09a5", RUN+="/bin/sh -c 'd=/sys%p/cdc_ncm; for v in 16383 16384; do echo $$v > $$d/rx_max; echo $$v > $$d/tx_max; done'"
+# Surface Go 2 LTE modem (Microsoft-branded Qualcomm X16): every MBIM OPEN fails ('Failure') until
+# cdc_ncm re-sends SET_NTB_INPUT_SIZE; toggling rx_max/tx_max forces that. A RUN+= here races the
+# wwan0 -> wwp* rename on 26.04, so a systemd unit does it after the event.
+ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="09a5", TAG+="systemd", ENV{SYSTEMD_WANTS}+="surface-lte-fix.service"
 # 26.04 (kernel 7.0): runtime suspend (and USB3 LPM, see modules/lte.sh) leave the modem's MBIM
 # control channel dead ("Transaction timed out"); keep the link fully awake.
 ACTION=="add|bind", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="045e", ATTR{idProduct}=="09a5", ATTR{power/control}="on"

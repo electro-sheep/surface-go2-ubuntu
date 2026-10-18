@@ -9,10 +9,13 @@ step "LTE: modem tools"
 apt_install modemmanager libmbim-utils libqmi-utils
 
 step "LTE: wake-up fix (udev rule + resume hook)"
-# The modem ignores MBIM until cdc_ncm re-sends SET_NTB_INPUT_SIZE; toggling rx_max/tx_max forces
-# that. The udev rule covers boot/replug, the system-sleep hook covers resume from suspend.
+# The modem fails every MBIM OPEN until cdc_ncm re-sends SET_NTB_INPUT_SIZE; toggling rx_max/tx_max
+# forces that. The udev rule starts surface-lte-fix.service on boot/replug, the system-sleep hook
+# covers resume from suspend.
 sudo install -m 644 "$FILES/lte/78-surface-lte-fix.rules" /etc/udev/rules.d/
 sudo install -m 755 "$FILES/lte/surface-lte-fix" /usr/lib/systemd/system-sleep/
+sudo install -m 644 "$FILES/lte/surface-lte-fix.service" /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo udevadm control --reload
 # 26.04 (kernel 7.0): USB3 link power management leaves the modem's MBIM channel dead
 # ("Transaction timed out"). usbcore is built in, so the no-LPM quirk goes on the kernel command line

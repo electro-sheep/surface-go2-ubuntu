@@ -55,6 +55,7 @@ step "LTE"
 if lsusb -d 045e:09a5 >/dev/null 2>&1; then
   t "udev wake-up rule"              test -f /etc/udev/rules.d/78-surface-lte-fix.rules
   t "resume hook"                    test -x /usr/lib/systemd/system-sleep/surface-lte-fix
+  t "boot NTB-size fix unit"         test -f /etc/systemd/system/surface-lte-fix.service
   t "ModemManager sees the modem"    bash -c "mmcli -L | grep -q /Modem/"
   t "SIM present"                    bash -c "mmcli -m any | grep -qE 'primary sim path: /'"
   mmcli -m any 2>/dev/null | grep -E 'operator name|state:|signal quality' | sed 's/^ */   /'
