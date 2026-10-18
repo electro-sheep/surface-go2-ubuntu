@@ -5,6 +5,11 @@
 // Sites fall back to VP9/H.264, which the GPU decodes.
 user_pref("media.av1.enabled", false);
 
+// GPU video decoding (VA-API, iHD from the snap's mesa-2404). On 26.04 Firefox left it off and
+// decoded in software: its video process loaded libva but never opened the GPU (~0.5 core).
+user_pref("media.ffmpeg.vaapi.enabled", true);
+user_pref("media.hardware-video-decoding.force-enabled", true);
+
 // Save the open tabs every 60 s instead of every 15 s (fewer disk writes and wakeups).
 user_pref("browser.sessionstore.interval", 60000);
 
