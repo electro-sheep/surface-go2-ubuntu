@@ -14,6 +14,11 @@ step "LTE: wake-up fix (udev rule + resume hook)"
 sudo install -m 644 "$FILES/lte/78-surface-lte-fix.rules" /etc/udev/rules.d/
 sudo install -m 755 "$FILES/lte/surface-lte-fix" /usr/lib/systemd/system-sleep/
 sudo udevadm control --reload
+# Re-plug the (internal) modem so the rule applies now.
+for d in /sys/bus/usb/devices/*; do
+  [[ $(cat "$d/idVendor" 2>/dev/null):$(cat "$d/idProduct" 2>/dev/null) == 045e:09a5 ]] || continue
+  echo 0 | sudo tee "$d/authorized" >/dev/null; sleep 2; echo 1 | sudo tee "$d/authorized" >/dev/null; sleep 5
+done
 # apply it now as well, as the rule would on add
 sudo /usr/lib/systemd/system-sleep/surface-lte-fix post
 sudo systemctl restart ModemManager
