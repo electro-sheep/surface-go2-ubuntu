@@ -16,7 +16,8 @@
 #   tweaks    trims found with usage-tracker: Firefox user.js (no AV1, tabs saved every 60 s, no
 #             telemetry), adw-gtk3's GTK4 stylesheet off on GTK < 4.16 (journal spam), GNOME
 #             Software out of the Activities search (stays in RAM)
-#   power     battery: PCI runtime PM, PCIe ASPM powersupersave, NMI watchdog off, writeback 15 s
+#   power     battery: PCI runtime PM, PCIe ASPM powersupersave, NMI watchdog off, writeback 15 s,
+#             power-saver profile on battery, performance on AC
 #             (USB untouched: the LTE modem stays awake)
 #   rice      Catppuccin Mocha desktop theme, terminal, prompt, fetch and the `rice` command
 #             (works on any Ubuntu 26.04 GNOME machine, not just the Surface)

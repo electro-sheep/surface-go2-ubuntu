@@ -1,0 +1,2 @@
+# surface-go2-ubuntu power module: switch the power profile when the charger comes or goes.
+SUBSYSTEM=="power_supply", KERNEL=="ACAD", ACTION=="change", RUN+="/usr/bin/systemd-run --no-block /usr/local/sbin/surface-power-profile"
