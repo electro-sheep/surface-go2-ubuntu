@@ -1,6 +1,6 @@
 # Surface Go 2 LTE modem (Microsoft-branded Qualcomm X16): it ignores MBIM until cdc_ncm re-sends
 # SET_NTB_INPUT_SIZE. Changing rx_max/tx_max forces that before ModemManager probes the modem.
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="wwan*", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="09a5", RUN+="/bin/sh -c 'd=/sys%p/cdc_ncm; for v in 16383 16384; do echo $$v > $$d/rx_max; echo $$v > $$d/tx_max; done'"
-# 26.04 (kernel 7.0): USB3 link power saving (U1/U2) and runtime suspend leave the modem's MBIM
+# 26.04 (kernel 7.0): runtime suspend (and USB3 LPM, see modules/lte.sh) leave the modem's MBIM
 # control channel dead ("Transaction timed out"); keep the link fully awake.
-ACTION=="add|bind", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="045e", ATTR{idProduct}=="09a5", ATTR{power/control}="on", ATTR{power/usb3_hardware_lpm_u1}="disable", ATTR{power/usb3_hardware_lpm_u2}="disable"
+ACTION=="add|bind", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="045e", ATTR{idProduct}=="09a5", ATTR{power/control}="on"

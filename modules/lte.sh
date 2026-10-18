@@ -14,6 +14,15 @@ step "LTE: wake-up fix (udev rule + resume hook)"
 sudo install -m 644 "$FILES/lte/78-surface-lte-fix.rules" /etc/udev/rules.d/
 sudo install -m 755 "$FILES/lte/surface-lte-fix" /usr/lib/systemd/system-sleep/
 sudo udevadm control --reload
+# 26.04 (kernel 7.0): USB3 link power management leaves the modem's MBIM channel dead
+# ("Transaction timed out"). usbcore is built in, so the no-LPM quirk goes on the kernel command line
+# (next boot) and into the live parameter (now, before the re-plug below).
+q=045e:09a5:k
+if ! grep -q "usbcore.quirks=$q" /etc/default/grub.d/surface-lte.cfg 2>/dev/null; then
+  echo "GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT usbcore.quirks=$q\"" | sudo tee /etc/default/grub.d/surface-lte.cfg >/dev/null
+  sudo update-grub
+fi
+echo "$q" | sudo tee /sys/module/usbcore/parameters/quirks >/dev/null
 # Re-plug the (internal) modem so the rule applies now.
 for d in /sys/bus/usb/devices/*; do
   [[ $(cat "$d/idVendor" 2>/dev/null):$(cat "$d/idProduct" 2>/dev/null) == 045e:09a5 ]] || continue
