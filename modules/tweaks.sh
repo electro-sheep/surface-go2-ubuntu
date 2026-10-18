@@ -34,3 +34,17 @@ if [[ $dis != *"'org.gnome.Software.desktop'"* ]]; then
 fi
 ok "disabled search providers: $(gsettings get org.gnome.desktop.search-providers disabled)"
 info "a GNOME Software already running in the background stays until you log out"
+
+step "Tweaks: idle background services off (battery)"
+# Each of these wakes the CPU on a timer for something a tablet rarely uses. Printing still works:
+# cups starts on demand from its socket. Crash reporters and network printer discovery go.
+for s in kerneloops cups-browsed snap.cups.cups-browsed; do
+  systemctl list-unit-files "$s.service" --no-legend 2>/dev/null | grep -q . && sudo systemctl disable --now "$s.service" 2>/dev/null
+done
+if systemctl list-unit-files cups.socket --no-legend 2>/dev/null | grep -q .; then
+  sudo systemctl disable --now cups.service 2>/dev/null; sudo systemctl enable --now cups.socket
+fi
+# File search indexer (localsearch on GNOME 47+): keep search, but never crawl on battery.
+gsettings set org.freedesktop.Tracker3.Miner.Files index-on-battery false 2>/dev/null
+gsettings set org.freedesktop.Tracker3.Miner.Files index-on-battery-first-time false 2>/dev/null
+ok "kerneloops, cups-browsed off; cups on demand; indexer paused on battery"

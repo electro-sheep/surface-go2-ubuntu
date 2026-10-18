@@ -85,6 +85,7 @@ fi
 step "Tweaks"
 t "Firefox user.js: no AV1, tabs saved every 60 s, no telemetry" \
                                      python3 -I "$FILES/tweaks/firefox-userjs.py" check "$FILES/tweaks/firefox-user.js"
+t "idle background services off"     bash -c "! systemctl is-active -q kerneloops cups-browsed"
 t "adw-gtk3 GTK4 stylesheet off (GTK4 < 4.16 can't read it)" test -z "$(adw_gtk3_gtk4_unreadable)"
 t "GNOME Software out of the Activities search" \
                                      bash -c "gsettings get org.gnome.desktop.search-providers disabled | grep -q \"'org.gnome.Software.desktop'\""

@@ -14,3 +14,9 @@
 #uiGroup .search-entry StLabel.hint-text {
     color: rgba(166, 173, 200, 0.9);
 }
+
+/* GNOME 50: the dock's outer containers kept square corners, so Open Bar's dock shadow showed
+ * sharp edges around the rounded pill. Round every layer to Open Bar's dock radius (dbradius 20). */
+#dashtodockContainer, #dashtodockContainer #dash, #dashtodockContainer .dash-background,
+#dashtodockContainer #dashtodockDashContainer { border-radius: 20px; }
+#dashtodockContainer, #dashtodockContainer #dash { box-shadow: none; background-color: transparent; }
