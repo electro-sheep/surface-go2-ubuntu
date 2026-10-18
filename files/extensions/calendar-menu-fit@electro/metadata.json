@@ -3,7 +3,11 @@
   "name": "Calendar Menu Fit",
   "description": "Narrows the notification column of the clock drop-down so the whole menu fits a tablet's screen in portrait.",
   "shell-version": [
-    "46"
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
   ],
   "version": 2
 }

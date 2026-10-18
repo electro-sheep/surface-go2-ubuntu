@@ -19,4 +19,5 @@
  * sharp edges around the rounded pill. Round every layer to Open Bar's dock radius (dbradius 20). */
 #dashtodockContainer, #dashtodockContainer #dash, #dashtodockContainer .dash-background,
 #dashtodockContainer #dashtodockDashContainer { border-radius: 20px; }
-#dashtodockContainer, #dashtodockContainer #dash { box-shadow: none; background-color: transparent; }
+#dashtodockContainer, #dashtodockContainer #dash, #dashtodockContainer #dashtodockDashContainer,
+#dashtodockContainer #dashtodockBox, #dashtodockContainer .dash-item-container { box-shadow: none; background-color: transparent; border: none; }
