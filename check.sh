@@ -19,6 +19,8 @@ t "no cdrom apt source"              bash -c "! grep -rqsE '^deb .*file:/+cdrom'
 t "no installer policy-rc.d"         test ! -e /usr/sbin/policy-rc.d
 t "zram swap active"                 bash -c "swapon --show=NAME | grep -q zram"
 t "zram used readily (swappiness)"   bash -c "[ \$(cat /proc/sys/vm/swappiness) -ge 100 ]"
+t "zram set to zstd (from next boot if it was busy)" \
+                                     grep -q '^compression-algorithm *= *zstd' /etc/systemd/zram-generator.conf.d/surface.conf
 t "system logs capped"               test -f /etc/systemd/journald.conf.d/size.conf
 t "cloud-init removed"               bash -c "! dpkg -s cloud-init"
 t "NetworkManager-wait-online off"   bash -c "! systemctl is-enabled -q NetworkManager-wait-online"
@@ -92,6 +94,8 @@ t "idle background services off"     bash -c "! systemctl is-active -q kerneloop
 t "adw-gtk3 GTK4 stylesheet off (GTK4 < 4.16 can't read it)" test -z "$(adw_gtk3_gtk4_unreadable)"
 t "GNOME Software out of the Activities search" \
                                      bash -c "gsettings get org.gnome.desktop.search-providers disabled | grep -q \"'org.gnome.Software.desktop'\""
+t "GNOME Software not started at login (dock opens it directly)" \
+                                     bash -c "[ ! -f /usr/lib/systemd/user/gnome-software.service ] || { [ \"\$(systemctl --user is-enabled gnome-software.service 2>/dev/null)\" = masked ] && grep -q '^DBusActivatable=false' ~/.local/share/applications/org.gnome.Software.desktop; }"
 
 step "Power"
 t "PCI runtime PM on every device"   bash -c "! grep -qx on /sys/bus/pci/devices/*/power/control"

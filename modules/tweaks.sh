@@ -1,5 +1,5 @@
 # tweaks: trims found with usage-tracker: Firefox's CPU decoding, disk writes and wakeups, a theme
-# that floods the journal, and GNOME Software staying in RAM after an Activities search.
+# that floods the journal, and GNOME Software staying in RAM (started at login or by a search).
 
 step "Tweaks: Firefox: no AV1, tabs saved every 60 s, no telemetry"
 # AV1 is already off by policy (system module); user.js also slows the session saves (every 15 s
@@ -33,7 +33,25 @@ if [[ $dis != *"'org.gnome.Software.desktop'"* ]]; then
   gsettings set org.gnome.desktop.search-providers disabled "$dis"
 fi
 ok "disabled search providers: $(gsettings get org.gnome.desktop.search-providers disabled)"
-info "a GNOME Software already running in the background stays until you log out"
+
+step "Tweaks: GNOME Software only while you use it"
+# GNOME 49+ starts gnome-software.service at every login for update checks (~100 MB, 1.3 GB while
+# it refreshes). Its Wants= is inside gnome-session-services.target, which a user drop-in can't
+# take away, so mask it. Masking also blocks D-Bus activation, which is how the dock and app grid
+# open Software, so a local copy of its launcher runs the program directly instead.
+if [[ -f /usr/lib/systemd/user/gnome-software.service ]]; then
+  systemctl --user mask --now gnome-software.service >/dev/null 2>&1 || true
+  src=/usr/share/applications/org.gnome.Software.desktop
+  dst=$HOME/.local/share/applications/org.gnome.Software.desktop
+  if [[ -f $src ]]; then
+    mkdir -p "${dst%/*}"
+    sed 's/^DBusActivatable=true/DBusActivatable=false/' "$src" > "$dst"
+  fi
+  ok "gnome-software.service $(systemctl --user is-enabled gnome-software.service 2>/dev/null); the dock starts Software directly"
+  info "other apps' 'Open in Software' links and update notifications no longer open it"
+else
+  ok "no gnome-software.service here: it doesn't start at login"
+fi
 
 step "Tweaks: idle background services off (battery)"
 # Each of these wakes the CPU on a timer for something a tablet rarely uses. Printing still works:

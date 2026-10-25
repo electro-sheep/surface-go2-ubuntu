@@ -70,6 +70,7 @@ sudo reboot
 | `tweaks` | Firefox decodes AV1 on the CPU, saves the open tabs every 15 s and wakes the CPU for telemetry (`glean.dispatcher` was the most frequent waker the usage tracker saw) | `user.js` in the default Firefox profile: AV1 off, tabs saved every 60 s, telemetry and studies off. It goes in a marked block at the top of `user.js`, so your own lines stay; set a pref again below the block to override it. Applies when Firefox next starts |
 | | adw-gtk3 (from the rice) ships a GTK4 stylesheet that needs GTK 4.16; with 24.04's GTK 4.14 every GTK4 app logs ~960 `Theme parser error` lines to the journal at start | renames the theme's `gtk-4.0` folder to `gtk-4.0.disabled` while GTK4 is older than 4.16 (the `rice` module does this too). GTK4 apps fall back to GTK's own Adwaita look, which adw-gtk3 copies anyway |
 | | typing in the Activities search starts GNOME Software as a search provider, and it then stays in memory (~250–310 MB) | takes GNOME Software out of the search providers (`org.gnome.desktop.search-providers disabled`); installed apps still show up in the search |
+| | on GNOME 49+ gnome-session starts `gnome-software.service` at every login (~100 MB, 1.3 GB while it refreshes) | masks the service and gives the dock a local launcher that runs Software directly (masking also blocks the D-Bus start the dock uses); other apps' "Open in Software" links no longer open it |
 
 Optional modules:
 

@@ -7,9 +7,17 @@ sudo apt-get update
 
 step "System: zram swap (half of RAM, zstd)"
 apt_install systemd-zram-generator
-sudo install -m 644 "$FILES/system/zram-generator.conf" /etc/systemd/zram-generator.conf
+# A drop-in, not /etc/systemd/zram-generator.conf: the 26.04 upgrade renamed that file to
+# .dpkg-bak (the package stopped shipping it), which quietly put zram back on lzo-rle.
+sudo install -D -m 644 "$FILES/system/zram-generator.conf" /etc/systemd/zram-generator.conf.d/surface.conf
 sudo systemctl daemon-reload
-sudo systemctl restart systemd-zram-setup@zram0.service || warn "zram starts on next boot"
+zused=$(awk '{print $1}' /sys/block/zram0/mm_stat 2>/dev/null || echo 0)
+if (( ${zused:-0} < 64 << 20 )); then
+  sudo systemctl restart systemd-zram-setup@zram0.service || warn "zram starts on next boot"
+elif [[ $(cat /sys/block/zram0/comp_algorithm) != *"[zstd]"* ]]; then
+  # Restarting zram first moves everything in it back into RAM, which thrashes when it's full.
+  info "zram holds $((zused >> 20)) MB right now, so it switches to zstd at the next boot"
+fi
 zramctl | sed 's/^/   /'
 
 step "System: use zram readily"
