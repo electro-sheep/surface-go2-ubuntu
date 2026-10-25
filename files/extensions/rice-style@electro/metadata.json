@@ -1,7 +1,7 @@
 {
   "uuid": "rice-style@electro",
   "name": "Rice Style",
-  "description": "Small Catppuccin Mocha colour fixes for shell parts the rice extensions can't style, such as the overview search bar.",
+  "description": "Catppuccin Mocha styling for shell parts the rice extensions don't cover: the overview search bar, the floating dock, and phone-style quick settings (big tiles, chunky sliders, system buttons at the bottom) with a matching calendar.",
   "shell-version": [
     "46",
     "47",
@@ -9,5 +9,5 @@
     "49",
     "50"
   ],
-  "version": 1
+  "version": 2
 }

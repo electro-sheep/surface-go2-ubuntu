@@ -101,6 +101,9 @@ Without `APN=…` you can add mobile data in **Settings → Mobile Network**.
 
 - **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left (updating every 3–5 s to spare the battery) and a clipboard menu. Menus and notifications are solid with rounded corners (Blur My Shell's pop-up blur is off, as it can't round its corners on GNOME 46).
 - **Overview:** search bar tinted to match the bar and dock, via the small **Rice Style** extension.
+- **Quick settings:** phone-style, also via Rice Style: big rounded tiles (solid mauve with dark
+  text when on), chunky brightness and volume sliders, and the battery, settings, lock and power
+  buttons as a row of circles at the bottom. The calendar menu uses the same cards.
 - **Dock:** a floating island, same colours as the bar, mauve running dots. It hides behind
   windows; the small **Dock Handle** extension puts a home-bar pill at the bottom centre: tap it
   or swipe up from it and the dock slides up (it tucks away again after 5 s, a tap elsewhere or a

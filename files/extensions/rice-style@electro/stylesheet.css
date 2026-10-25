@@ -29,3 +29,146 @@
 
 /* Floating: a gap under the dock so its rounded border isn't cut off by the screen edge */
 #dashtodockContainer.bottom #dash { margin-bottom: 8px; }
+
+/* ── Quick settings: phone-style tiles ─────────────────────────────────────────────────────────
+ * Catppuccin Mocha: base #1e1e2e, crust #11111b, surface0 #313244, surface1 #45475a,
+ * text #cdd6f4, subtext0 #a6adc8, mauve #cba6f7. Open Bar paints these with !important, so every
+ * rule here is #uiGroup-prefixed (outranks its plain class selectors) and !important too.
+ * "On" tiles are solid mauve with dark text: the accent's own white-on-pastel was unreadable. */
+#uiGroup .quick-settings {
+  background-color: rgba(30, 30, 46, 0.96) !important;
+  border: 1px solid rgba(203, 166, 247, 0.35) !important;
+  border-radius: 28px !important;
+  padding: 16px !important;
+}
+#uiGroup .quick-settings-grid { spacing-rows: 10px; spacing-columns: 10px; }
+
+#uiGroup .quick-toggle,
+#uiGroup .quick-toggle-has-menu {
+  min-width: 14em; max-width: 14em;
+  min-height: 4.6em;
+}
+#uiGroup .quick-toggle-has-menu .quick-toggle { min-width: auto; max-width: auto; }
+#uiGroup .quick-toggle {
+  color: #cdd6f4 !important;
+  background-color: #313244 !important;
+  border: none !important;
+  border-radius: 20px !important;
+  box-shadow: none !important;
+}
+#uiGroup .quick-toggle > StBoxLayout { spacing: 10px; padding-left: 10px; }
+#uiGroup .quick-toggle .quick-toggle-icon {
+  icon-size: 20px;
+  padding: 9px;
+  border-radius: 999px;
+  background-color: rgba(205, 214, 244, 0.08);
+}
+#uiGroup .quick-toggle .quick-toggle-title { font-weight: 700; }
+#uiGroup .quick-toggle .quick-toggle-subtitle { color: #a6adc8; }
+#uiGroup .quick-toggle:hover, #uiGroup .quick-toggle:focus {
+  color: #cdd6f4 !important;
+  background-color: #45475a !important;
+}
+#uiGroup .quick-toggle:checked,
+#uiGroup .quick-toggle:checked:active,
+#uiGroup .quick-toggle:checked:hover,
+#uiGroup .quick-toggle:checked:focus {
+  color: #11111b !important;
+  background-color: #cba6f7 !important;
+}
+#uiGroup .quick-toggle:checked:hover, #uiGroup .quick-toggle:checked:focus {
+  background-color: #d5b8f9 !important;
+}
+#uiGroup .quick-toggle:checked .quick-toggle-icon { background-color: rgba(17, 17, 27, 0.12); }
+#uiGroup .quick-toggle:checked .quick-toggle-subtitle { color: rgba(17, 17, 27, 0.7); }
+
+/* Toggles with a menu: one tile with a chevron at its right end, not two pills */
+#uiGroup .quick-toggle-has-menu .quick-toggle:ltr { border-radius: 20px 0 0 20px !important; }
+#uiGroup .quick-toggle-has-menu .quick-toggle:rtl { border-radius: 0 20px 20px 0 !important; }
+#uiGroup .quick-toggle-has-menu .quick-toggle-menu-button {
+  color: #cdd6f4 !important;
+  background-color: #313244 !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 12px !important;
+}
+#uiGroup .quick-toggle-has-menu .quick-toggle-menu-button:ltr { border-radius: 0 20px 20px 0 !important; }
+#uiGroup .quick-toggle-has-menu .quick-toggle-menu-button:rtl { border-radius: 20px 0 0 20px !important; }
+#uiGroup .quick-toggle-has-menu .quick-toggle-menu-button:hover { background-color: #45475a !important; }
+#uiGroup .quick-toggle-has-menu .quick-toggle-menu-button:checked {
+  color: #11111b !important;
+  background-color: #cba6f7 !important;
+}
+#uiGroup .quick-toggle-has-menu .quick-toggle-separator { width: 1px; background-color: rgba(17, 17, 27, 0.25); }
+
+/* Sliders: chunky full-width bars, a light knob at the end of the mauve fill */
+#uiGroup .quick-slider .slider {
+  color: #cdd6f4 !important;
+  -barlevel-height: 22px;
+  -barlevel-border-width: 0;
+  -barlevel-background-color: #313244 !important;
+  -barlevel-active-background-color: #cba6f7 !important;
+  -slider-handle-radius: 11px;
+  -slider-handle-border-width: 0;
+}
+#uiGroup .quick-slider .icon-button, #uiGroup .quick-slider .button {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* System row (battery, screenshot, settings, lock, power): round buttons, at the bottom */
+#uiGroup .quick-settings-system-item { margin-top: 6px; }
+#uiGroup .quick-settings-system-item .icon-button,
+#uiGroup .quick-settings-system-item .button {
+  color: #cdd6f4 !important;
+  background-color: #313244 !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 999px !important;
+}
+#uiGroup .quick-settings-system-item .icon-button:hover,
+#uiGroup .quick-settings-system-item .button:hover { background-color: #45475a !important; }
+/* The battery reading is a QuickToggle too: keep it a plain label, not a tile */
+#uiGroup .quick-settings-system-item .power-item {
+  min-height: 0; min-width: 0; max-width: none;
+  color: #cdd6f4 !important;
+  background-color: transparent !important;
+}
+#uiGroup .quick-settings-system-item .power-item:checked { color: #cba6f7 !important; }
+#uiGroup .quick-settings-system-item .power-item .quick-toggle-icon { background-color: transparent; padding: 0; }
+#uiGroup .quick-settings-system-item .icon-button {
+  min-width: 40px; min-height: 40px;
+  padding: 0 !important;
+}
+
+/* Toggle submenus (Wi-Fi networks, power modes...) as the same rounded card */
+#uiGroup .quick-toggle-menu {
+  background-color: #181825 !important;
+  border-radius: 20px !important;
+  border: none !important;
+}
+
+/* ── Calendar / notifications: the same tiles ──────────────────────────────────────────────── */
+#uiGroup .datemenu-popover {
+  background-color: rgba(30, 30, 46, 0.96) !important;
+  border: 1px solid rgba(203, 166, 247, 0.35) !important;
+  border-radius: 28px !important;
+}
+#uiGroup .calendar, #uiGroup .events-button, #uiGroup .world-clocks-button,
+#uiGroup .weather-button, #uiGroup .message {
+  background-color: #313244 !important;
+  border: none !important;
+  border-radius: 20px !important;
+  box-shadow: none !important;
+}
+#uiGroup .events-button:hover, #uiGroup .world-clocks-button:hover,
+#uiGroup .weather-button:hover, #uiGroup .message:hover { background-color: #45475a !important; }
+#uiGroup .calendar .calendar-today,
+#uiGroup .calendar .calendar-today:selected,
+#uiGroup .calendar .calendar-today:hover,
+#uiGroup .calendar .calendar-today:focus {
+  color: #11111b !important;
+  background-color: #cba6f7 !important;
+  font-weight: 800;
+}
