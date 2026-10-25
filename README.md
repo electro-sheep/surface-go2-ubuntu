@@ -101,7 +101,11 @@ Without `APN=…` you can add mobile data in **Settings → Mobile Network**.
 
 - **Top bar:** floating Open Bar pill in Catppuccin Mocha with a mauve hairline, CPU/RAM graph on the left (updating every 3–5 s to spare the battery) and a clipboard menu. Menus and notifications are solid with rounded corners (Blur My Shell's pop-up blur is off, as it can't round its corners on GNOME 46).
 - **Overview:** search bar tinted to match the bar and dock, via the small **Rice Style** extension.
-- **Dock:** always visible, same colours as the bar, mauve running dots.
+- **Dock:** a floating island, same colours as the bar, mauve running dots. It hides behind
+  windows; the small **Dock Handle** extension puts a home-bar pill at the bottom centre: tap it
+  or swipe up from it and the dock slides up (it tucks away again after 5 s, a tap elsewhere or a
+  window switch). Swipes from the rest of the bottom edge still open the on-screen keyboard. The
+  app grid shows just this dock (Just Perfection's own dash is off).
 - **Windows:** 12 px rounded corners. Burn My Windows glitches windows in and burns them away (Incinerate) on close.
 - **Battery:** blur, window effects and rounded corners switch off by themselves on battery or in Power Saver and come back when charging (`rice effects on|off|auto`).
 - **Super+Space:** Search Light (Spotlight-style).

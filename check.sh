@@ -81,6 +81,7 @@ if command -v rice >/dev/null || [[ -x ~/.local/bin/rice ]]; then
   t "rice installed"                 test -x "$HOME/.local/bin/rice"
   t "Open Bar active"                bash -c "gnome-extensions info openbar@neuromorph | grep -q 'State: ACTIVE'"
   t "Rice Style enabled"             bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q rice-style@electro"
+  t "Dock Handle enabled"            bash -c "gsettings get org.gnome.shell enabled-extensions | grep -q dock-handle@electro"
   t "Effects auto-switch running"    systemctl --user is-active rice-effects-auto.service
   t "window effects: glitch in, incinerate out" bash -c "grep -q glitch-enable-effect=true ~/.config/burn-my-windows/profiles/*1.conf && grep -q incinerate-enable-effect=true ~/.config/burn-my-windows/profiles/*2.conf"
 fi

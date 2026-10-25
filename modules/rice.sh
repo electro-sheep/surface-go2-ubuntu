@@ -70,6 +70,10 @@ gsettings set org.gnome.desktop.notifications.application:/org/gnome/desktop/not
 # local: Catppuccin colour fixes for shell parts the extensions above can't style
 ext_install_local rice-style@electro
 ext_enable rice-style@electro
+# local: a home-bar pill for the auto-hiding dock (tap or swipe up from it; the rest of the
+# bottom edge still opens the on-screen keyboard)
+ext_install_local dock-handle@electro
+ext_enable dock-handle@electro
 need_logout=1
 
 step "Rice: Catppuccin Mocha terminal profile"

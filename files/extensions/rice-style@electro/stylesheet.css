@@ -26,3 +26,6 @@
   border-radius: 20px;
   box-shadow: none;  /* St draws shadows square, ignoring border-radius: that was the ghost box */
 }
+
+/* Floating: a gap under the dock so its rounded border isn't cut off by the screen edge */
+#dashtodockContainer.bottom #dash { margin-bottom: 8px; }

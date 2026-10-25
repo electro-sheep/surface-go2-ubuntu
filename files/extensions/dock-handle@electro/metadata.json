@@ -1,0 +1,10 @@
+{
+  "uuid": "dock-handle@electro",
+  "name": "Dock Handle",
+  "description": "A home-bar pill at the bottom of the screen for the auto-hiding Ubuntu Dock: tap it or swipe up from it to show the dock. Swipes from the rest of the bottom edge still open the on-screen keyboard.",
+  "shell-version": [
+    "49",
+    "50"
+  ],
+  "version": 1
+}

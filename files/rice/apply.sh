@@ -134,17 +134,20 @@ gs "${JP[@]}" panel-icon-size "$BAR_ICON"
 gs "${JP[@]}" panel-button-padding-size 8
 gs "${JP[@]}" panel-indicator-padding-size 4
 gs "${JP[@]}" workspace-switcher-should-show true
+# Ubuntu Dock stands in for the overview dash; Just Perfection's "show dash" (on by default)
+# brought GNOME's own back on GNOME 50, a second big dock above ours in the app grid.
+gs "${JP[@]}" dash false
 
-echo "• Ubuntu Dock: floating island, always visible"
+echo "• Ubuntu Dock: floating island, hides behind windows (Dock Handle shows it)"
 D=org.gnome.shell.extensions.dash-to-dock
 gsettings set $D dock-position 'BOTTOM'
 gsettings set $D dash-max-icon-size "$DOCK_ICON"
 gsettings set $D icon-size-fixed true
 gsettings set $D extend-height false
 gsettings set $D always-center-icons true
-gsettings set $D dock-fixed true
-gsettings set $D autohide false
-gsettings set $D intellihide false
+gsettings set $D dock-fixed false
+gsettings set $D autohide true
+gsettings set $D intellihide true
 gsettings set $D intellihide-mode 'FOCUS_APPLICATION_WINDOWS'
 gsettings set $D require-pressure-to-show true
 gsettings set $D pressure-threshold 60.0
