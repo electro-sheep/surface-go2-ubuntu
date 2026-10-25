@@ -535,6 +535,8 @@ class Sampler:
         # already saw of them; the rest is CPU of processes too short-lived to sample.
         # If the parent exited too (Firefox quitting with its tabs), the child's time went
         # into the parent's cutime and on up to whichever ancestor reaped it, so credit that.
+        # A parent that exited first orphans its children to a subreaper further up
+        # (systemd --user), so credit the reaper didn't use moves on up the ancestors.
         gone = {p.pid: p for key, p in old.items() if key not in cur}
         reaped = defaultdict(int)
         for p in gone.values():
@@ -543,6 +545,20 @@ class Sampler:
                 ppid, hops = gone[ppid].ppid, hops + 1
             reaped[ppid] += p.cpu + p.child
         self.procs = cur
+        if reaped:
+            by_pid = {p.pid: (key, p) for key, p in cur.items()}
+
+            def depth(pid):
+                d = 0
+                while pid in by_pid and d < 64:
+                    pid, d = by_pid[pid][1].ppid, d + 1
+                return d
+            for pid in sorted(by_pid, key=depth, reverse=True):   # children before parents
+                if reaped.get(pid, 0) > 0:
+                    key, p = by_pid[pid]
+                    left = reaped[pid] - max(0, deltas[key][1])
+                    if left > 0 and p.ppid in by_pid:
+                        reaped[p.ppid] += left
 
         rows, threads = [], []
         for key, p in cur.items():
