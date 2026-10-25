@@ -21,6 +21,8 @@ const OSK_MODES = Shell.ActionMode.ALL & ~Shell.ActionMode.LOCK_SCREEN;
 
 export default class DockHandleExtension extends Extension {
     enable() {
+        if (this._chrome)   // already enabled: GNOME has been seen to call enable() twice
+            return;
         this._revealed = false;
         this._menuOpen = false;
 
@@ -45,8 +47,14 @@ export default class DockHandleExtension extends Extension {
 
         // Our swipe: the bottom edge, but only where the pill is.
         this._gesture = new Shell.EdgeDragGesture({name: 'Dock handle swipe', side: St.Side.BOTTOM});
-        this._gesture.connect('may-recognize', g =>
-            Main.actionMode === Shell.ActionMode.NORMAL && this._handleShown() && this._inZone(g));
+        this._gesture.connect('may-recognize', g => {
+            try {
+                return Main.actionMode === Shell.ActionMode.NORMAL && this._handleShown() && this._inZone(g);
+            } catch (e) {
+                logError(e, 'Dock Handle');
+                return false;
+            }
+        });
         this._gesture.connect('progress', (_g, progress) => {
             this._handle.translation_y = -Math.min(progress, 1) * LIFT * this._scale();
         });
@@ -57,12 +65,23 @@ export default class DockHandleExtension extends Extension {
         this._gesture.connect('cancel', () => (this._handle.translation_y = 0));
         global.stage.add_action(this._gesture);
 
-        // The keyboard's swipe: same rule as before, minus the pill's zone.
+        // The keyboard's swipe: same rule as keyboard.js, minus the pill's zone. Block just the
+        // shell's own handler (found before ours is connected) and stand in for it; if anything
+        // goes wrong, fall back to the shell's rule so the keyboard swipe always keeps working.
         this._oskGesture = Main.keyboard._bottomDragGesture ?? null;
         if (this._oskGesture) {
-            GObject.signal_handlers_block_matched(this._oskGesture, {signalId: 'may-recognize'});
-            this._oskId = this._oskGesture.connect('may-recognize', g =>
-                Boolean(OSK_MODES & Main.actionMode) && !(this._handleShown() && this._inZone(g)));
+            this._oskShellId = GObject.signal_handler_find(this._oskGesture, {signalId: 'may-recognize'});
+            if (this._oskShellId)
+                GObject.signal_handler_block(this._oskGesture, this._oskShellId);
+            this._oskId = this._oskGesture.connect('may-recognize', g => {
+                const allowed = Boolean(OSK_MODES & Main.actionMode);
+                try {
+                    return allowed && !(this._handleShown() && this._inZone(g));
+                } catch (e) {
+                    logError(e, 'Dock Handle');
+                    return allowed;
+                }
+            });
         }
 
         Main.keyboard.connectObject('visibility-changed', () => this._sync(), this);
@@ -84,17 +103,24 @@ export default class DockHandleExtension extends Extension {
     }
 
     disable() {
+        if (!this._chrome)   // already disabled
+            return;
         this._findToken++;   // drop any lookup still waiting on its import
         this._conceal();
         this._dropDock();
 
         if (this._oskGesture) {
-            this._oskGesture.disconnect(this._oskId);
-            GObject.signal_handlers_unblock_matched(this._oskGesture, {signalId: 'may-recognize'});
+            if (this._oskId)
+                this._oskGesture.disconnect(this._oskId);
+            if (this._oskShellId)
+                GObject.signal_handler_unblock(this._oskGesture, this._oskShellId);
             this._oskGesture = null;
+            this._oskId = this._oskShellId = 0;
         }
-        global.stage.remove_action(this._gesture);
-        this._gesture = null;
+        if (this._gesture) {
+            global.stage.remove_action(this._gesture);
+            this._gesture = null;
+        }
 
         for (const obj of [Main.layoutManager, Main.keyboard, Main.sessionMode, Main.overview,
             global.display, Main.extensionManager])
@@ -205,8 +231,12 @@ export default class DockHandleExtension extends Extension {
             !Main.sessionMode.isLocked && !Main.sessionMode.isGreeter;
     }
 
+    // Did this touch start over the pill (with some slop either side)? The gesture lives on the
+    // stage, so its point coordinates are stage coordinates.
     _inZone(gesture) {
-        const {x} = gesture.get_begin_centroid_abs();
+        if (!this._handle || gesture.get_n_points() < 1)
+            return false;
+        const {x} = gesture.get_point_begin_coords(0);
         const [hx] = this._handle.get_transformed_position();
         const [hw] = this._handle.get_transformed_size();
         const slop = SLOP * this._scale();
@@ -226,7 +256,10 @@ export default class DockHandleExtension extends Extension {
             this._capturedId = global.stage.connect('captured-event', (_a, event) => {
                 const type = event.type();
                 if (type === Clutter.EventType.TOUCH_BEGIN || type === Clutter.EventType.BUTTON_PRESS) {
-                    const source = event.get_source();
+                    // as ui/grabHelper.js does; event.get_source() can be null on GNOME 50
+                    const source = global.stage.get_event_actor(event);
+                    if (!source)
+                        return Clutter.EVENT_PROPAGATE;
                     if (this._dock()?.contains(source))
                         this._armTimer();
                     else if (!this._menuOpen && !this._handle.contains(source))   // a dock menu is its own actor
